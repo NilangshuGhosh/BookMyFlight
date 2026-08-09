@@ -1,0 +1,11 @@
+# .clineignore
+target/
+build/
+.mvn/
+.gradle/
+node_modules/
+dist/
+*.jar
+*.war
+.idea/
+.vscode/
