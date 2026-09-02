@@ -3,9 +3,13 @@ package com.example.demo.service;
 import com.example.demo.dto.FlightResponse;
 import com.example.demo.dto.FlightSearchRequest;
 
-import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
+import java.time.LocalDate;
+import java.util.List;
 public interface FlightService {
     List<FlightResponse> searchDirectFlights(FlightSearchRequest request);
     List<FlightResponse> getAllUpcomingFlights();
+    Page<FlightResponse> getDepartedFlights(LocalDate date, Pageable pageable);
 }

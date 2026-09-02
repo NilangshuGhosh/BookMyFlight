@@ -1,8 +1,9 @@
-import { useState, useContext, useMemo } from 'react';
+import { useState, useContext, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import api from '../api/axios';
 import { Search, MapPin, Calendar, Plane, Filter } from 'lucide-react';
+import FlightCard from '../components/FlightCard';
 
 const HomePage = () => {
     const { user } = useContext(AuthContext);
@@ -23,6 +24,46 @@ const HomePage = () => {
     
     // New State for Sorting
     const [sortBy, setSortBy] = useState('price_asc');
+
+    // Departed Flights State
+    const [showDepartedFlights, setShowDepartedFlights] = useState(false);
+    const [departedFlights, setDepartedFlights] = useState([]);
+    const [departedLoading, setDepartedLoading] = useState(false);
+    const [departedError, setDepartedError] = useState('');
+    const [departedPage, setDepartedPage] = useState(0);
+    const [departedTotalPages, setDepartedTotalPages] = useState(1);
+    const [departedDate, setDepartedDate] = useState('');
+
+    useEffect(() => {
+        if (!showDepartedFlights) return;
+
+        const fetchDepartedFlights = async () => {
+            setDepartedLoading(true);
+            setDepartedError('');
+            try {
+                const response = await api.get('/flights/departed', {
+                    params: {
+                        page: departedPage,
+                        size: 5,
+                        ...(departedDate && { date: departedDate })
+                    }
+                });
+                if (response.data && Array.isArray(response.data.content)) {
+                    setDepartedFlights(response.data.content);
+                    setDepartedTotalPages(response.data.totalPages);
+                } else {
+                    setDepartedFlights([]);
+                    setDepartedTotalPages(1);
+                }
+            } catch (err) {
+                setDepartedError('Failed to fetch departed flights.');
+            } finally {
+                setDepartedLoading(false);
+            }
+        };
+
+        fetchDepartedFlights();
+    }, [departedPage, departedDate, showDepartedFlights]);
 
     const handleSearch = async (e) => {
         e.preventDefault();
@@ -153,45 +194,104 @@ const HomePage = () => {
                     </div>
 
                     {sortedFlights.map(flight => (
-                        <div key={flight.id} className="bg-white border rounded-xl p-6 shadow-sm flex flex-col md:flex-row items-center justify-between hover:shadow-md transition-shadow">
-                            <div className="flex-1 flex justify-between items-center w-full md:pr-12">
-                                <div className="text-center">
-                                    <div className="text-2xl font-bold text-gray-900">{new Date(flight.departureTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
-                                    <div className="text-sm text-gray-500">{flight.sourceAirportCode}</div>
-                                </div>
-                                
-                                <div className="flex-1 flex flex-col items-center px-4">
-                                    <div className="text-xs text-gray-400 mb-1">{flight.airline} • {flight.flightNumber}</div>
-                                    <div className="w-full flex items-center">
-                                        <div className="h-px bg-gray-300 flex-1"></div>
-                                        <Plane className="w-4 h-4 mx-2 text-blue-500" />
-                                        <div className="h-px bg-gray-300 flex-1"></div>
-                                    </div>
-                                    {flight.status !== 'SCHEDULED' && (
-                                        <div className="mt-1 text-xs font-bold text-red-500">{flight.status}</div>
-                                    )}
-                                </div>
-
-                                <div className="text-center">
-                                    <div className="text-2xl font-bold text-gray-900">{new Date(flight.arrivalTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
-                                    <div className="text-sm text-gray-500">{flight.destinationAirportCode}</div>
-                                </div>
-                            </div>
-
-                            <div className="mt-6 md:mt-0 md:border-l md:pl-8 flex flex-col items-center justify-center min-w-[150px]">
-                                <div className="text-2xl font-bold text-gray-900 mb-3">₹{flight.basePrice}</div>
-                                <button 
-                                    onClick={() => handleBookFlight(flight.id)}
-                                    disabled={bookingState.id === flight.id && bookingState.loading}
-                                    className="w-full bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
-                                >
-                                    {bookingState.id === flight.id && bookingState.loading ? 'Booking...' : 'Book Now'}
-                                </button>
-                            </div>
-                        </div>
+                        <FlightCard 
+                            key={flight.id} 
+                            flight={flight} 
+                            onBook={handleBookFlight} 
+                            bookingState={bookingState} 
+                        />
                     ))}
                 </div>
             )}
+            
+            {/* Departed Flights Section */}
+            <div className="mt-16 pt-8 border-t border-gray-200">
+                <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-900">Recently Departed Flights</h2>
+                        <p className="text-gray-500 text-sm mt-1">Check the status of past flights</p>
+                    </div>
+                    
+                    <button 
+                        onClick={() => setShowDepartedFlights(!showDepartedFlights)}
+                        className="mt-4 md:mt-0 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors"
+                    >
+                        {showDepartedFlights ? 'Hide Departed Flights' : 'Show Departed Flights'}
+                    </button>
+                </div>
+
+                {showDepartedFlights && (
+                    <>
+                        <div className="flex justify-end mb-4">
+                            <div className="flex items-center bg-white border rounded-lg px-3 py-2 text-gray-900 shadow-sm w-full md:w-auto">
+                                <Calendar className="w-4 h-4 text-gray-400 mr-2" />
+                                <input 
+                                    type="date" 
+                                    className="bg-transparent outline-none text-sm w-full"
+                                    value={departedDate}
+                                    onChange={(e) => {
+                                        setDepartedDate(e.target.value);
+                                        setDepartedPage(0); // reset page on date change
+                                    }}
+                                />
+                                {departedDate && (
+                                    <button 
+                                        onClick={() => { setDepartedDate(''); setDepartedPage(0); }}
+                                        className="ml-2 text-xs text-gray-400 hover:text-red-500 font-medium"
+                                        type="button"
+                                    >
+                                        Clear
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                {departedLoading && <div className="text-center py-8 text-gray-500 animate-pulse">Loading departed flights...</div>}
+                {departedError && <div className="text-center text-red-500 py-4 bg-red-50 rounded-lg">{departedError}</div>}
+                
+                {!departedLoading && !departedError && departedFlights.length === 0 && (
+                    <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-dashed">
+                        No departed flights found for the selected date.
+                    </div>
+                )}
+
+                {!departedLoading && !departedError && departedFlights.length > 0 && (
+                    <div className="space-y-4">
+                        {departedFlights.map(flight => (
+                            <FlightCard 
+                                key={flight.id} 
+                                flight={flight} 
+                                isDeparted={true} 
+                            />
+                        ))}
+                    </div>
+                )}
+
+                {/* Pagination Controls */}
+                {!departedLoading && !departedError && departedTotalPages > 1 && (
+                    <div className="flex justify-center items-center mt-8 space-x-4">
+                        <button 
+                            disabled={departedPage === 0}
+                            onClick={() => setDepartedPage(p => p - 1)}
+                            className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Previous
+                        </button>
+                        <span className="text-sm font-medium text-gray-600">
+                            Page {departedPage + 1} of {departedTotalPages}
+                        </span>
+                        <button 
+                            disabled={departedPage === departedTotalPages - 1}
+                            onClick={() => setDepartedPage(p => p + 1)}
+                            className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Next
+                        </button>
+                    </div>
+                )}
+                    </>
+                )}
+            </div>
         </div>
     );
 };

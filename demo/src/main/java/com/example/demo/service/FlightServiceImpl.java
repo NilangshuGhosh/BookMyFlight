@@ -6,6 +6,10 @@ import com.example.demo.entity.Flight;
 import com.example.demo.repository.FlightRepository;
 import org.springframework.stereotype.Service;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -39,6 +43,26 @@ public class FlightServiceImpl implements FlightService {
                 .filter(f -> f.getDepartureTime().isAfter(LocalDateTime.now()))
                 .map(this::mapToResponse)
                 .toList();
+    }
+
+    @Override
+    public Page<FlightResponse> getDepartedFlights(LocalDate date, Pageable pageable) {
+        LocalDateTime now = LocalDateTime.now();
+        Page<Flight> flights;
+        
+        if (date == null) {
+            flights = flightRepository.findByDepartureTimeBeforeOrderByDepartureTimeDesc(now, pageable);
+        } else {
+            LocalDateTime startOfDay = date.atStartOfDay();
+            LocalDateTime endOfDay = date.plusDays(1).atStartOfDay().minusNanos(1);
+            
+            // If the requested date is today, we only want flights that have ALREADY departed today
+            LocalDateTime end = endOfDay.isBefore(now) ? endOfDay : now;
+            
+            flights = flightRepository.findByDepartureTimeBetweenOrderByDepartureTimeDesc(startOfDay, end, pageable);
+        }
+        
+        return flights.map(this::mapToResponse);
     }
 
     private FlightResponse mapToResponse(Flight flight) {

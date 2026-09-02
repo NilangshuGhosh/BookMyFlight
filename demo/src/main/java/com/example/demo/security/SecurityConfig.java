@@ -41,7 +41,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Public endpoints
                 .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/api/flights/search", "/api/flights/upcoming").permitAll()
+                .requestMatchers("/api/flights/search", "/api/flights/upcoming", "/api/flights/departed").permitAll()
                 // Admin only endpoints
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 // All other endpoints require authentication

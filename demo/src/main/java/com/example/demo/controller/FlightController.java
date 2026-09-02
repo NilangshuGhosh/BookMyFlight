@@ -7,6 +7,10 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+
 import java.time.LocalDate;
 import java.util.List;
 
@@ -43,6 +47,21 @@ public class FlightController {
     @GetMapping("/upcoming")
     public ResponseEntity<List<FlightResponse>> getUpcomingFlights() {
         List<FlightResponse> flights = flightService.getAllUpcomingFlights();
+        return ResponseEntity.ok(flights);
+    }
+
+    /**
+     * Get departed flights with pagination and optional date filter.
+     * Example: GET /api/flights/departed?page=0&size=10&date=2026-08-20
+     */
+    @GetMapping("/departed")
+    public ResponseEntity<Page<FlightResponse>> getDepartedFlights(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        
+        Pageable pageable = PageRequest.of(page, size);
+        Page<FlightResponse> flights = flightService.getDepartedFlights(date, pageable);
         return ResponseEntity.ok(flights);
     }
 }
