@@ -1,28 +1,59 @@
-import { useState, useContext, useMemo, useEffect } from 'react';
+import { useState, useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import api from '../api/axios';
-import { Search, MapPin, Calendar, Plane, Filter } from 'lucide-react';
+import { Search, MapPin, Calendar, Filter } from 'lucide-react';
 import FlightCard from '../components/FlightCard';
+
+const getLocalTodayString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
 
 const HomePage = () => {
     const { user } = useContext(AuthContext);
     const navigate = useNavigate();
+    const todayStr = getLocalTodayString();
 
-    const airports = [
-        { code: 'CCU', name: 'Kolkata' },
-        { code: 'DEL', name: 'Delhi' },
-        { code: 'BLR', name: 'Bengaluru' },
-        { code: 'BOM', name: 'Mumbai' }
-    ];
+    const [airports, setAirports] = useState([
+        { airportCode: 'CCU', cityName: 'Kolkata' },
+        { airportCode: 'DEL', cityName: 'Delhi' },
+        { airportCode: 'BLR', cityName: 'Bengaluru' },
+        { airportCode: 'BOM', cityName: 'Mumbai' }
+    ]);
+
+    useEffect(() => {
+        let active = true;
+        const loadAirports = async () => {
+            try {
+                const response = await api.get('/airports');
+                if (active && Array.isArray(response.data) && response.data.length > 0) {
+                    setAirports(response.data);
+                }
+            } catch {
+                // Keep initial fallback airport list if request fails
+            }
+        };
+        loadAirports();
+        return () => {
+            active = false;
+        };
+    }, []);
 
     const [searchParams, setSearchParams] = useState({ source: 'CCU', destination: 'DEL', date: '' });
+    const [activeSearchParams, setActiveSearchParams] = useState(null);
     const [flights, setFlights] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [bookingState, setBookingState] = useState({ id: null, loading: false });
+    const [searchPage, setSearchPage] = useState(0);
+    const [searchTotalPages, setSearchTotalPages] = useState(1);
+    const [searchTotalElements, setSearchTotalElements] = useState(0);
     
-    // New State for Sorting
+    // Sorting state (applied server-side via /api/flights/search)
     const [sortBy, setSortBy] = useState('price_asc');
 
     // Departed Flights State
@@ -55,7 +86,7 @@ const HomePage = () => {
                     setDepartedFlights([]);
                     setDepartedTotalPages(1);
                 }
-            } catch (err) {
+            } catch {
                 setDepartedError('Failed to fetch departed flights.');
             } finally {
                 setDepartedLoading(false);
@@ -65,32 +96,69 @@ const HomePage = () => {
         fetchDepartedFlights();
     }, [departedPage, departedDate, showDepartedFlights]);
 
-    const handleSearch = async (e) => {
-        e.preventDefault();
+    const fetchSearchFlights = async (paramsToUse, pageToFetch, sortToUse) => {
+        if (paramsToUse.date && paramsToUse.date < todayStr) {
+            setFlights([]);
+            setSearchTotalPages(1);
+            setSearchTotalElements(0);
+            setError('Cannot search upcoming flights for a past date. Use "Recently Departed Flights" below.');
+            return;
+        }
+
         setLoading(true);
         setError('');
-        setFlights([]);
 
         try {
             const response = await api.get('/flights/search', {
                 params: {
-                    source: searchParams.source,
-                    destination: searchParams.destination,
-                    date: searchParams.date || null
+                    source: paramsToUse.source,
+                    destination: paramsToUse.destination,
+                    page: pageToFetch,
+                    size: 5,
+                    sortBy: sortToUse,
+                    ...(paramsToUse.date && { date: paramsToUse.date })
                 }
             });
             
-            if (Array.isArray(response.data)) {
-                setFlights(response.data);
-                if (response.data.length === 0) setError('No flights found for this route.');
+            if (response.data && Array.isArray(response.data.content)) {
+                setFlights(response.data.content);
+                setSearchTotalPages(response.data.totalPages || 1);
+                setSearchTotalElements(response.data.totalElements ?? response.data.content.length);
+                if (response.data.content.length === 0) {
+                    setError('No upcoming flights found for this route and date.');
+                }
             } else {
+                setFlights([]);
                 setError('Server connection error. Please ensure the backend is running.');
             }
         } catch (err) {
-            setError('Failed to fetch flights. Please try again.');
+            setFlights([]);
+            const backendMsg = typeof err.response?.data === 'string' ? err.response.data : err.response?.data?.message;
+            setError(backendMsg || 'Failed to fetch flights. Please try again.');
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleSearch = async (e) => {
+        e.preventDefault();
+        const submittedParams = { ...searchParams };
+        setActiveSearchParams(submittedParams);
+        setSearchPage(0);
+        await fetchSearchFlights(submittedParams, 0, sortBy);
+    };
+
+    const handleSearchPageChange = async (newPage) => {
+        if (!activeSearchParams) return;
+        setSearchPage(newPage);
+        await fetchSearchFlights(activeSearchParams, newPage, sortBy);
+    };
+
+    const handleSortChange = async (newSortBy) => {
+        setSortBy(newSortBy);
+        if (!activeSearchParams) return;
+        setSearchPage(0);
+        await fetchSearchFlights(activeSearchParams, 0, newSortBy);
     };
 
     const handleBookFlight = async (flightId) => {
@@ -109,15 +177,6 @@ const HomePage = () => {
         }
     };
 
-    // Smart Sorting Logic: Re-calculates only when flights or sortBy changes
-    const sortedFlights = useMemo(() => {
-        const sorted = [...flights];
-        if (sortBy === 'price_asc') sorted.sort((a, b) => a.basePrice - b.basePrice);
-        if (sortBy === 'price_desc') sorted.sort((a, b) => b.basePrice - a.basePrice);
-        if (sortBy === 'time_asc') sorted.sort((a, b) => new Date(a.departureTime) - new Date(b.departureTime));
-        return sorted;
-    }, [flights, sortBy]);
-
     return (
         <div className="max-w-5xl mx-auto p-6 space-y-8">
             <div className="bg-blue-600 rounded-2xl p-8 text-white shadow-lg">
@@ -133,7 +192,7 @@ const HomePage = () => {
                             onChange={(e) => setSearchParams({ ...searchParams, source: e.target.value })}
                         >
                             {airports.map(apt => (
-                                <option key={`src-${apt.code}`} value={apt.code}>{apt.name} ({apt.code})</option>
+                                <option key={`src-${apt.airportCode}`} value={apt.airportCode}>{apt.cityName} ({apt.airportCode})</option>
                             ))}
                         </select>
                     </div>
@@ -146,7 +205,7 @@ const HomePage = () => {
                             onChange={(e) => setSearchParams({ ...searchParams, destination: e.target.value })}
                         >
                             {airports.map(apt => (
-                                <option key={`dest-${apt.code}`} value={apt.code}>{apt.name} ({apt.code})</option>
+                                <option key={`dest-${apt.airportCode}`} value={apt.airportCode}>{apt.cityName} ({apt.airportCode})</option>
                             ))}
                         </select>
                     </div>
@@ -155,10 +214,20 @@ const HomePage = () => {
                         <Calendar className="w-5 h-5 text-gray-400 mr-2" />
                         <input 
                             type="date" 
+                            min={todayStr}
                             className="w-full bg-transparent outline-none"
                             value={searchParams.date}
                             onChange={(e) => setSearchParams({ ...searchParams, date: e.target.value })}
                         />
+                        {searchParams.date && (
+                            <button
+                                type="button"
+                                onClick={() => setSearchParams({ ...searchParams, date: '' })}
+                                className="ml-2 text-xs text-gray-400 hover:text-red-500 font-medium"
+                            >
+                                Clear
+                            </button>
+                        )}
                     </div>
 
                     <button 
@@ -177,14 +246,14 @@ const HomePage = () => {
             {flights.length > 0 && (
                 <div className="space-y-4">
                     <div className="flex justify-between items-center bg-white p-4 rounded-xl border shadow-sm">
-                        <span className="font-medium text-gray-700">{flights.length} flights found</span>
+                        <span className="font-medium text-gray-700">{searchTotalElements} flights found</span>
                         <div className="flex items-center space-x-2 text-sm text-gray-600">
                             <Filter className="w-4 h-4" />
                             <span>Sort by:</span>
                             <select 
                                 className="border-b-2 border-blue-600 outline-none bg-transparent font-medium text-gray-900 cursor-pointer"
                                 value={sortBy}
-                                onChange={(e) => setSortBy(e.target.value)}
+                                onChange={(e) => handleSortChange(e.target.value)}
                             >
                                 <option value="price_asc">Price (Lowest to Highest)</option>
                                 <option value="price_desc">Price (Highest to Lowest)</option>
@@ -193,7 +262,7 @@ const HomePage = () => {
                         </div>
                     </div>
 
-                    {sortedFlights.map(flight => (
+                    {flights.map(flight => (
                         <FlightCard 
                             key={flight.id} 
                             flight={flight} 
@@ -201,6 +270,28 @@ const HomePage = () => {
                             bookingState={bookingState} 
                         />
                     ))}
+
+                    {searchTotalPages > 1 && (
+                        <div className="flex justify-center items-center mt-6 space-x-4">
+                            <button
+                                disabled={searchPage === 0 || loading}
+                                onClick={() => handleSearchPageChange(searchPage - 1)}
+                                className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Previous
+                            </button>
+                            <span className="text-sm font-medium text-gray-600">
+                                Page {searchPage + 1} of {searchTotalPages}
+                            </span>
+                            <button
+                                disabled={searchPage >= searchTotalPages - 1 || loading}
+                                onClick={() => handleSearchPageChange(searchPage + 1)}
+                                className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
             
@@ -227,6 +318,7 @@ const HomePage = () => {
                                 <Calendar className="w-4 h-4 text-gray-400 mr-2" />
                                 <input 
                                     type="date" 
+                                    max={todayStr}
                                     className="bg-transparent outline-none text-sm w-full"
                                     value={departedDate}
                                     onChange={(e) => {

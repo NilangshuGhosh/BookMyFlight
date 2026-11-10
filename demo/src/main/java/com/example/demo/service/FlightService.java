@@ -7,9 +7,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
-import java.util.List;
+
 public interface FlightService {
-    List<FlightResponse> searchDirectFlights(FlightSearchRequest request);
-    List<FlightResponse> getAllUpcomingFlights();
+    Page<FlightResponse> searchDirectFlights(FlightSearchRequest request, Pageable pageable);
+    Page<FlightResponse> getAllUpcomingFlights(Pageable pageable);
     Page<FlightResponse> getDepartedFlights(LocalDate date, Pageable pageable);
 }

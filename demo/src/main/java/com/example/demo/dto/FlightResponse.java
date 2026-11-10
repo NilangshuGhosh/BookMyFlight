@@ -12,5 +12,6 @@ public record FlightResponse(
     LocalDateTime departureTime,
     LocalDateTime arrivalTime,
     BigDecimal basePrice,
-    String status
+    String status,
+    Integer delayMinutes
 ) {}

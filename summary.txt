@@ -1,0 +1,385 @@
+================================================================================
+BOOK MY FLIGHT - PROJECT SUMMARY (CURRENT VERSION)
+================================================================================
+
+1. OVERVIEW & FEATURES IMPLEMENTED UP TO THIS VERSION
+--------------------------------------------------------------------------------
+Book My Flight is a full-stack flight discovery, booking, and management
+application with role-based access (USER and ADMIN).
+
+Core Features:
+- Authentication & Authorization:
+  - User registration and login returning a JWT token, email, and role
+    (POST /api/auth/register, POST /api/auth/login).
+  - Stateless JWT authentication filter on the backend; token, email, and role
+    persisted in browser localStorage on the frontend.
+  - Genesis admin seeding on startup via DataSeeder.java.
+
+- Public Flight Search & Discovery:
+  - Direct upcoming flight search by source and destination airport codes
+    (GET /api/flights/search).
+  - Listing of all upcoming (non-departed) flights (GET /api/flights/upcoming).
+  - Client-side sorting on the home page by lowest price, highest price, and
+    earliest departure time.
+
+- Departed Flights Feature (Recently Added):
+  - Paginated backend endpoint returning departed flights sorted by newest
+    departure first (descending order) using Spring Data JPA Pageable
+    (GET /api/flights/departed?page=0&size=5&date=YYYY-MM-DD).
+  - Optional `date` query parameter:
+    - If omitted: returns all flights with `departureTime < now`.
+    - If provided: returns departed flights on that date (capped at `now` if
+      the selected date is today, so upcoming flights later today are excluded).
+  - Publicly accessible without login.
+
+- Flight Booking & Passenger Dashboard:
+  - Authenticated users can book upcoming flights (POST /api/bookings/create),
+    which generates a booking with a PNR code.
+  - Users can view all their bookings (GET /api/bookings/my-bookings) or look
+    up a booking by PNR (GET /api/bookings/pnr/{pnr}).
+  - User Dashboard (/dashboard) includes instant client-side filtering by PNR,
+    airline, or source/destination airport.
+
+- Admin Control Panel (/admin):
+  - Protected to users with role `ADMIN` (/api/admin/**).
+  - Create new flights with departure/arrival validation
+    (POST /api/admin/flights/create).
+  - Update flight status (e.g., SCHEDULED, DELAYED, CANCELLED) for upcoming
+    flights; prevents modifying flights that have already departed
+    (PUT /api/admin/flights/{flightId}/status).
+
+
+2. TECH STACK
+--------------------------------------------------------------------------------
+Backend (directory: demo/):
+- Language / Runtime: Java 17
+- Framework: Spring Boot 4.1.0 (spring-boot-starter-webmvc)
+- Data Access: Spring Data JPA / Hibernate (ddl-auto=none; schema managed by Flyway)
+- Database: PostgreSQL (hosted on Neon, HikariCP connection pool configured)
+- Migrations: Flyway (flyway-core, flyway-database-postgresql,
+  spring-boot-starter-flyway)
+  - V1__init_schema.sql: users, airports, flights, bookings tables
+  - V2__seed_data.sql: 4 airports (CCU, DEL, BLR, BOM) & sample IndiGo flights
+  - V3__add_timestamps_to_users.sql: user timestamps migration
+- Security: Spring Security + JJWT 0.11.5 (jjwt-api, jjwt-impl, jjwt-jackson)
+  with BCryptPasswordEncoder and stateless session management.
+
+Frontend (directory: frontend/):
+- UI Library: React 19.2.8 + React DOM 19.2.8
+- Build Tool / Dev Server: Vite 8.2.0 (@vitejs/plugin-react)
+- Routing: React Router DOM 7.18.2
+- HTTP Client: Axios 1.19.0
+- Styling: Tailwind CSS 4.3.3 via @tailwindcss/vite plugin (imported in
+  src/index.css via `@import "tailwindcss";`)
+- Icons: Lucide React 1.31.0
+- Linting: ESLint 10.x (eslint-plugin-react-hooks, eslint-plugin-react-refresh)
+
+
+3. FRONTEND INTEGRATION & ARCHITECTURE
+--------------------------------------------------------------------------------
+- API & Proxy Setup:
+  - `frontend/vite.config.js` proxies `/api` requests to `http://127.0.0.1:8080`.
+  - `frontend/src/api/axios.js` creates an Axios instance with `baseURL: '/api'`
+    and a request interceptor that automatically attaches
+    `Authorization: Bearer <token>` from `localStorage` when available.
+
+- Routing & Auth State:
+  - `frontend/src/context/AuthContext.jsx` manages `user` state (`email`, `role`,
+    `token`), `login`, and `logout`.
+  - `frontend/src/App.jsx` provides the top Navbar and route guards:
+    - `/` -> `HomePage` (public)
+    - `/login` -> `AuthPage` (public)
+    - `/dashboard` -> `Dashboard` (`ProtectedRoute`, requires logged-in user)
+    - `/admin` -> `AdminDashboard` (`AdminRoute`, requires `user.role === 'ADMIN'`)
+
+- HomePage & Departed Flights Integration (`frontend/src/pages/HomePage.jsx`):
+  - State tracks `showDepartedFlights` (default `false`), `departedFlights`,
+    `departedLoading`, `departedError`, `departedPage`, `departedTotalPages`,
+    and `departedDate`.
+  - A `useEffect` hook watches `[departedPage, departedDate, showDepartedFlights]`
+    and returns early if `showDepartedFlights` is `false`. Only when the user
+    clicks "Show Departed Flights" does the frontend call `GET /api/flights/departed`.
+  - Includes a date input (`type="date"`) with a "Clear" button (resets page to
+    0 on change) and Previous / Next pagination controls (`size: 5`).
+
+- Reusable Card Component (`frontend/src/components/FlightCard.jsx`):
+  - Extracted flight presentation into `<FlightCard flight isDeparted onBook bookingState />`.
+  - Displays formatted departure/arrival times, dates, airport codes, airline,
+    flight number, price, status badge, and conditional "Book Now" button.
+  - When `isDeparted={true}`, renders a muted card style, gray plane icon,
+    a `DEPARTED` badge, and hides the booking button.
+  - Reused for both active search results and departed flights in `HomePage.jsx`.
+
+
+4. PROBLEMS ADDRESSED IN THIS VERSION
+--------------------------------------------------------------------------------
+1) 403 Forbidden on Departed Flights Endpoint:
+   - Cause: `SecurityConfig.java` only permitted `/api/auth/**`,
+     `/api/flights/search`, and `/api/flights/upcoming`, requiring authentication
+     for all other routes via `.anyRequest().authenticated()`.
+   - Fix: Added `/api/flights/departed` to `.permitAll()` in
+     `SecurityConfig.java` (`securityFilterChain`).
+
+2) Unnecessary Data Fetching & Immediate Display of Departed Flights:
+   - Cause: Initially, `HomePage.jsx` fetched and displayed departed flights
+     automatically on page mount.
+   - Fix: Added `showDepartedFlights` state (initially `false`), guarded the
+     `useEffect` with `if (!showDepartedFlights) return;`, and wrapped the
+     departed flights filter, list, and pagination behind a "Show Departed
+     Flights" / "Hide Departed Flights" toggle button.
+
+3) Duplicated Inline Markup for Flight Items:
+   - Cause: Both upcoming search results and departed flight rows used inline
+     JSX in `HomePage.jsx`, making the UI inconsistent and harder to maintain.
+   - Fix: Created `frontend/src/components/FlightCard.jsx` to unify card layout,
+     status display, and departed vs. bookable variations via props.
+
+4) Tailwind Styles Not Rendering (Plain Text / Dark Background Fallback):
+   - Cause: Tailwind CSS was not installed or configured in `frontend/`. The
+     app fell back to Vite's default `src/index.css` styles (dark background,
+     unformatted blocks) while ignoring all Tailwind utility classes.
+   - Fix: Installed `tailwindcss` and `@tailwindcss/vite`, registered
+     `tailwindcss()` in `frontend/vite.config.js`, and replaced
+     `frontend/src/index.css` with `@import "tailwindcss";`.
+
+
+5. NOTES FOR EXTENDING THIS PROJECT
+--------------------------------------------------------------------------------
+- Backend `/api/flights/search` currently accepts `date` in `FlightController`
+  and builds `FlightSearchRequest`, while `FlightServiceImpl.searchDirectFlights`
+  queries by source, destination, and `departureTime > now` (it does not yet
+  filter by `request.date()`). Filtering by the optional search date in
+  `FlightServiceImpl` / `FlightRepository` is a straightforward next enhancement.
+- `HomePage.jsx` still contains commented-out legacy code at the bottom of the
+  file and unused `err` parameters in two `catch (err)` blocks (which ESLint
+  flags with `no-unused-vars`). Cleaning those up will keep `npm run lint` clean.
+- Consider reusing or adapting `FlightCard` for `DashBoard.jsx` or adding
+  pagination/filtering to `/api/flights/upcoming` and `AdminDashboard.jsx` as
+  flight inventory grows.
+================================================================================
+
+
+
+================================================================================
+6. UPDATE LOG - PAGINATION, STRICT DATE FILTERING & PAST-DATE FREEZE (2026-11-10)
+================================================================================
+
+Problems Addressed:
+1) Unbounded Upcoming & Search Queries:
+   - Previously, `GET /api/flights/upcoming` (`getAllUpcomingFlights`) called
+     `flightRepository.findAll()` to load every row into JVM memory, filtered in
+     Java, and returned an unpaginated `List<FlightResponse>`. Likewise,
+     `GET /api/flights/search` (`searchDirectFlights`) returned an unpaginated
+     `List<FlightResponse>`. At scale, sending thousands of records at once
+     risks memory/network spikes and frontend rendering lag.
+2) Missing Date Filter in `searchDirectFlights`:
+   - `FlightController.searchFlights` accepted `date`, but
+     `FlightServiceImpl.searchDirectFlights` ignored `request.date()` and always
+     returned all upcoming flights after `now`.
+3) Past Dates Allowed in Upcoming Flight Search:
+   - Users could select or submit a historical date in the home search calendar,
+     even though past flights belong in the dedicated "Recently Departed
+     Flights" (`/api/flights/departed`) workflow.
+
+Files Changed & Rationale (Changed From -> Changed To):
+
+1. `demo/src/main/java/com/example/demo/repository/FlightRepository.java`
+   - Changed from: Returning `List<Flight>` for
+     `findBySourceAirportCodeAndDestinationAirportCodeAndDepartureTimeAfter`
+     with no paginated upcoming or date-range search methods.
+   - Changed to:
+     - `Page<Flight> findBySourceAirportCodeAndDestinationAirportCodeAndDepartureTimeAfter(..., Pageable pageable)`
+       for undated upcoming direct flight searches.
+     - `@Query` `findUpcomingDirectFlightsInRange(..., LocalDateTime start, LocalDateTime end, Pageable pageable)`
+       using `f.departureTime >= :start AND f.departureTime < :end`.
+     - `Page<Flight> findByDepartureTimeAfterOrderByDepartureTimeAsc(LocalDateTime currentTime, Pageable pageable)`
+       for `/api/flights/upcoming`.
+   - Why / Defense: Moving filtering, sorting (`ORDER BY`), and slicing
+     (`LIMIT`/`OFFSET`) to SQL via Spring Data `Pageable` avoids loading the
+     entire `flights` table into JVM memory. Using a half-open `[start, end)`
+     interval (`>= start AND < nextDayStart`) avoids PostgreSQL microsecond
+     rounding issues at `23:59:59.999999` and keeps midnight `00:00:00` flights
+     included on future dates.
+
+2. `demo/src/main/java/com/example/demo/service/FlightService.java`
+   - Changed from: `List<FlightResponse> searchDirectFlights(FlightSearchRequest)`
+     and `List<FlightResponse> getAllUpcomingFlights()`.
+   - Changed to: `Page<FlightResponse> searchDirectFlights(FlightSearchRequest, Pageable)`
+     and `Page<FlightResponse> getAllUpcomingFlights(Pageable)`.
+   - Why / Defense: Standardizes all flight listing/search service contracts on
+     Spring Data `Page<FlightResponse>` so pagination metadata (`totalPages`,
+     `totalElements`, page number) flows consistently to controllers and UI.
+
+3. `demo/src/main/java/com/example/demo/service/FlightServiceImpl.java`
+   - Changed from: Ignored `request.date()` in `searchDirectFlights`; called
+     `flightRepository.findAll()` + stream filter in `getAllUpcomingFlights`.
+   - Changed to:
+     - In `searchDirectFlights`: captures one consistent `now = LocalDateTime.now()`
+       and `today = now.toLocalDate()`.
+       - `date == null` -> queries all upcoming direct flights after `now`.
+       - `date.isBefore(today)` -> immediately returns `Page.empty(pageable)`
+         (defense-in-depth so past flights are never leaked by upcoming search).
+       - `date.isEqual(today)` -> sets `start = now` and `end = today + 1 day`
+         at `00:00`, returning only flights later today that have not departed.
+       - `date.isAfter(today)` -> sets `start = date.atStartOfDay()` and
+         `end = date + 1 day` at `00:00`, strictly returning only that day's
+         flights.
+     - In `getAllUpcomingFlights`: delegates directly to
+       `findByDepartureTimeAfterOrderByDepartureTimeAsc(LocalDateTime.now(), pageable)`.
+   - Why / Defense: Enforces strict single-day filtering when a date is given,
+     protects today's searches from showing already-departed morning flights,
+     and eliminates full-table scans.
+
+4. `demo/src/main/java/com/example/demo/controller/FlightController.java`
+   - Changed from: `searchFlights` returning `ResponseEntity<List<FlightResponse>>`
+     without `page`/`size`/`sortBy` or past-date rejection; `getUpcomingFlights`
+     returning `ResponseEntity<List<FlightResponse>>` without `page`/`size`.
+   - Changed to:
+     - `searchFlights` accepts `page` (default `0`), `size` (default `10`), and
+       `sortBy` (default `price_asc`; supports `price_asc`, `price_desc`,
+       `time_asc`), maps `sortBy` into a Spring Data `Sort`, rejects
+       `date.isBefore(LocalDate.now())` with `400 Bad Request`, and returns
+       `Page<FlightResponse>`.
+     - `getUpcomingFlights` accepts `page` (default `0`) and `size` (default `10`)
+       and returns `Page<FlightResponse>`.
+   - Why / Defense: Rejecting past dates at the API boundary with HTTP 400
+     prevents direct API callers from bypassing frontend calendar restrictions,
+     while translating `sortBy` into `Sort` inside `PageRequest` ensures sorting
+     is executed globally in SQL across all matching rows rather than only on a
+     single frontend page.
+
+5. `demo/src/test/java/com/example/demo/FlightServiceAndControllerTest.java`
+   - Added unit tests covering undated search, strict future-date range search,
+     past-date rejection in both service (`Page.empty`) and controller (`400
+     Bad Request`), and paginated `getAllUpcomingFlights` (verifying `findAll()`
+     is never called).
+
+6. `frontend/src/pages/HomePage.jsx`
+   - Changed from: Expecting `Array.isArray(response.data)` from
+     `/flights/search`, client-side `useMemo` sorting over the whole list, and an
+     unrestricted `<input type="date">` without pagination controls.
+   - Changed to:
+     - Added `getLocalTodayString()` (local `YYYY-MM-DD`, avoiding UTC timezone
+       drift) to set `min={todayStr}` on the search date picker (freezing past
+       dates in the calendar UI) and `max={todayStr}` on the departed flights
+       date picker.
+     - Added client-side past-date guard in `fetchSearchFlights` in case a user
+       types an older date manually.
+     - Added "Clear" button for the search date input.
+     - Wired server-side pagination (`searchPage`, `searchTotalPages`,
+       `searchTotalElements`, `size: 5`, Previous/Next buttons) and server-side
+       sorting (`sortBy` sent to `/api/flights/search` using `activeSearchParams`).
+     - Removed unused `useMemo`/`Plane` imports and unused `err` catch parameter
+       in departed fetch.
+   - Why / Defense: Prevents users from picking past dates for upcoming
+     bookings, keeps page counts and sort order consistent across pages via the
+     backend, and avoids browser memory bloat on large search results.
+
+7. `frontend/src/pages/AdminDashboard.jsx`
+   - Changed from: Calling `GET /flights/upcoming` with no query params and
+     assigning `response.data` directly as an array.
+   - Changed to: Sends `{ page, size: 10 }` to `/flights/upcoming`, parses
+     `response.data.content` and `response.data.totalPages`, adds Previous/Next
+     pagination controls, and structures `useEffect` async loading cleanly to
+     satisfy React Hooks ESLint rules.
+   - Why / Defense: Keeps the admin inventory table compatible with the new
+     paginated `/api/flights/upcoming` contract and scalable for large schedules.
+
+How `Page` & `Pageable` Work (Quick Reference):
+- Spring Data's `Pageable` (`PageRequest.of(page, size, sort)`) is passed to
+  `FlightRepository`, which executes SQL `ORDER BY` + `LIMIT`/`OFFSET` plus a
+  SQL `COUNT` query in PostgreSQL.
+- `FlightRepository` returns `Page<Flight>`, and `.map(this::mapToResponse)`
+  maps entities to `FlightResponse` while automatically retaining pagination
+  fields (`content`, `totalPages`, `totalElements`, `number`, `size`), which
+  Jackson serializes into the JSON response consumed by React.
+================================================================================
+
+
+
+================================================================================
+7. UPDATE LOG - AUTH HARDENING, AIRPORT VALIDATION & ADMIN PANEL EXTENSIONS (2026-11-10)
+================================================================================
+
+Problems & Vulnerabilities Addressed:
+1) Stale Auto-Login as Admin Without Logging In:
+   - Cause: `AuthContext.jsx` persisted `token`, `email`, and `role` in
+     `localStorage` (which survives backend/frontend/browser restarts) and
+     restored `user` on mount without verifying JWT expiration (`exp`) or
+     validating the token with the backend. Additionally, `JwtUtils.java` uses
+     a static `SECRET_KEY_STRING` with a 24h TTL, so old tokens remained valid
+     across backend restarts, and `AuthContext` trusted `localStorage.role` for
+     UI routing.
+   - Fix:
+     - Backend `AuthController.java`: Added `GET /api/auth/me` returning the
+       authoritative `{ email, role, userId }` from the database via
+       `Principal`.
+     - Backend `SecurityConfig.java`: Narrowed `.permitAll()` from
+       `/api/auth/**` to `/api/auth/login` and `/api/auth/register` so
+       `/api/auth/me` strictly requires a valid JWT.
+     - Frontend `axios.js` & `AuthContext.jsx`: Switched auth storage to
+       `sessionStorage` (clearing legacy `localStorage` keys), added client-side
+       JWT `exp` validation, verified active tokens against `GET /api/auth/me`
+       on mount (never trusting stored `role` without server verification), and
+       added an Axios 401 response interceptor dispatching `auth:unauthorized`
+       to log out stale/invalid sessions immediately.
+
+2) Manual Airport Code Entry & Missing Airport Validation:
+   - Cause: `AdminDashboard.jsx` used free-text `<input>` fields for source
+     and destination airport codes, and `AdminFlightController.createFlight`
+     did not verify whether codes existed in the `airports` table before saving
+     (risking PostgreSQL foreign-key violations or same-airport routes).
+   - Fix:
+     - Created `AirportController.java` (`GET /api/airports`, permitted publicly
+       in `SecurityConfig.java`) returning airports sorted by `cityName`.
+     - Updated `AdminFlightController.createFlight` to validate non-blank
+       fields, `source != destination`, `airportRepository.existsById(...)` for
+       both codes, positive `basePrice`, future `departureTime`, and
+       `departureTime < arrivalTime`.
+     - Updated `AdminDashboard.jsx` and `HomePage.jsx` to populate airport
+       dropdowns from `/api/airports`.
+
+3) Admin Panel Extensions (Details Modal, Delay Tracking, Revert & Confirmation):
+   - Added Flyway migration `V4__add_delay_minutes_to_flights.sql`
+     (`delay_minutes INTEGER NOT NULL DEFAULT 0`), updated `Flight.java`,
+     `FlightResponse.java`, and `FlightServiceImpl.mapToResponse`.
+   - Updated `AdminFlightController.updateFlightStatus`:
+     - `DELAYED` requires `delayMinutes > 0` and stores delay duration.
+     - `SCHEDULED` reverts a wrongly delayed flight back to normal and resets
+       `delayMinutes` to `0`.
+     - `CANCELLED` is enforced as a separate terminal state (`400 Bad Request`
+       if someone attempts to modify or revert an already-cancelled flight).
+   - Updated `BookingServiceImpl.createBooking` to reject booking `CANCELLED`
+     flights.
+   - Updated `FlightCard.jsx` to display `DELAYED (+X min)` badges and disable
+     booking on cancelled flights.
+   - Updated `AdminDashboard.jsx` with:
+     - Clickable rows + `Details` button opening a Full Flight Details modal
+       (ID, full airport names, scheduled/estimated times, duration, price,
+       status).
+     - Separate action controls for Delay / Update Delay / Revert to Normal vs.
+       Cancel Flight.
+     - A confirmation pop-up modal before submitting any status update,
+       including delay-minute presets (`+15m` to `+120m` + custom input) and
+       an explicit warning for permanent flight cancellation.
+================================================================================
+
+
+================================================================================
+8. UPDATE LOG - REVERTED TO localStorage WITH EXPIRY & SERVER VERIFICATION (2026-11-10)
+================================================================================
+- Reverted `sessionStorage` back to `localStorage` in `frontend/src/api/axios.js`
+  and `frontend/src/context/AuthContext.jsx` so closing/reopening the browser
+  does not immediately log the user out.
+- Kept all token validation safeguards:
+  1) `isTokenExpired(token)` checks the JWT `exp` claim on startup and clears
+     expired tokens immediately.
+  2) `GET /api/auth/me` verifies the token with the backend and loads the
+     authoritative `email`, `role`, and `userId` (never blindly trusting
+     `localStorage.role`).
+  3) Axios `401` response interceptor clears `localStorage` and triggers
+     `auth:unauthorized` if the backend rejects a token.
+- Cross-browser / cross-device isolation: `localStorage` is strictly local to
+  each browser profile on each machine; logging in on one browser/device never
+  shares tokens or logs in another browser/device, even across server restarts.
+================================================================================

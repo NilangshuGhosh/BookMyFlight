@@ -32,9 +32,12 @@ public class BookingServiceImpl implements BookingService {
         Flight flight = flightRepository.findById(request.flightId())
                 .orElseThrow(() -> new IllegalArgumentException("Flight not found with ID: " + request.flightId()));
 
-        // Hard business constraint: Do not allow booking past/departed flights
+        // Hard business constraint: Do not allow booking past/departed or cancelled flights
         if (flight.getDepartureTime().isBefore(LocalDateTime.now())) {
             throw new IllegalStateException("Cannot book a flight that has already departed.");
+        }
+        if ("CANCELLED".equalsIgnoreCase(flight.getStatus())) {
+            throw new IllegalStateException("Cannot book a cancelled flight.");
         }
 
         String uniquePnr = generatePnr();

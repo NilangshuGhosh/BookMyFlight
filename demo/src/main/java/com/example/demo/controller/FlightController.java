@@ -10,9 +10,9 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 import java.time.LocalDate;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/flights")
@@ -26,27 +26,46 @@ public class FlightController {
     }
 
     /**
-     * Search direct flights by source, destination, and optional date.
-     * Example: GET /api/flights/search?source=CCU&destination=DEL&date=2026-08-20
+     * Search upcoming direct flights by source, destination, optional future/today date,
+     * pagination, and sorting.
+     * Example: GET /api/flights/search?source=CCU&destination=DEL&date=2026-11-15&page=0&size=5&sortBy=price_asc
      */
     @GetMapping("/search")
-    public ResponseEntity<List<FlightResponse>> searchFlights(
+    public ResponseEntity<?> searchFlights(
             @RequestParam String source,
             @RequestParam String destination,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "price_asc") String sortBy) {
 
+        if (date != null && date.isBefore(LocalDate.now())) {
+            return ResponseEntity.badRequest()
+                    .body("Cannot search upcoming flights for a past date. Please use /api/flights/departed.");
+        }
+
+        Sort sort = switch (sortBy) {
+            case "price_desc" -> Sort.by(Sort.Direction.DESC, "basePrice");
+            case "time_asc" -> Sort.by(Sort.Direction.ASC, "departureTime");
+            default -> Sort.by(Sort.Direction.ASC, "basePrice");
+        };
+
+        Pageable pageable = PageRequest.of(page, size, sort);
         FlightSearchRequest searchRequest = new FlightSearchRequest(source, destination, date);
-        List<FlightResponse> flights = flightService.searchDirectFlights(searchRequest);
+        Page<FlightResponse> flights = flightService.searchDirectFlights(searchRequest, pageable);
         return ResponseEntity.ok(flights);
     }
 
     /**
-     * Get all upcoming, non-departed flights.
-     * Example: GET /api/flights/upcoming
+     * Get upcoming, non-departed flights with pagination.
+     * Example: GET /api/flights/upcoming?page=0&size=10
      */
     @GetMapping("/upcoming")
-    public ResponseEntity<List<FlightResponse>> getUpcomingFlights() {
-        List<FlightResponse> flights = flightService.getAllUpcomingFlights();
+    public ResponseEntity<Page<FlightResponse>> getUpcomingFlights(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        Page<FlightResponse> flights = flightService.getAllUpcomingFlights(pageable);
         return ResponseEntity.ok(flights);
     }
 

@@ -40,6 +40,9 @@ public class Flight {
     @Column(length = 50)
     private String status = "SCHEDULED";
 
+    @Column(name = "delay_minutes", nullable = false)
+    private Integer delayMinutes = 0;
+
     public Flight() {
     }
 
@@ -52,6 +55,7 @@ public class Flight {
         this.arrivalTime = arrivalTime;
         this.basePrice = basePrice;
         this.status = status;
+        this.delayMinutes = 0;
     }
 
     public Long getId() {
@@ -124,6 +128,14 @@ public class Flight {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Integer getDelayMinutes() {
+        return delayMinutes;
+    }
+
+    public void setDelayMinutes(Integer delayMinutes) {
+        this.delayMinutes = delayMinutes != null ? delayMinutes : 0;
     }
 }
 

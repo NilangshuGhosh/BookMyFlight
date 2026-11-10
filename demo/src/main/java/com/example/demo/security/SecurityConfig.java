@@ -39,8 +39,9 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // Public endpoints
-                .requestMatchers("/api/auth/**").permitAll()
+                // Public endpoints (note: /api/auth/me intentionally requires authentication)
+                .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()
+                .requestMatchers("/api/airports").permitAll()
                 .requestMatchers("/api/flights/search", "/api/flights/upcoming", "/api/flights/departed").permitAll()
                 // Admin only endpoints
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")

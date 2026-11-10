@@ -11,7 +11,6 @@ import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Service
 public class FlightServiceImpl implements FlightService {
@@ -23,26 +22,39 @@ public class FlightServiceImpl implements FlightService {
     }
 
     @Override
-    public List<FlightResponse> searchDirectFlights(FlightSearchRequest request) {
+    public Page<FlightResponse> searchDirectFlights(FlightSearchRequest request, Pageable pageable) {
         LocalDateTime now = LocalDateTime.now();
-        List<Flight> flights = flightRepository
-                .findBySourceAirportCodeAndDestinationAirportCodeAndDepartureTimeAfter(
-                        request.source().toUpperCase(),
-                        request.destination().toUpperCase(),
-                        now
-                );
+        LocalDate today = now.toLocalDate();
+        String source = request.source().trim().toUpperCase();
+        String destination = request.destination().trim().toUpperCase();
 
-        return flights.stream()
-                .map(this::mapToResponse)
-                .toList();
+        if (request.date() == null) {
+            return flightRepository
+                    .findBySourceAirportCodeAndDestinationAirportCodeAndDepartureTimeAfter(
+                            source, destination, now, pageable)
+                    .map(this::mapToResponse);
+        }
+
+        // Freeze past dates: never return departed/past flights from upcoming flight search
+        if (request.date().isBefore(today)) {
+            return Page.empty(pageable);
+        }
+
+        // If searching for today, only return flights departing from `now` until end of today.
+        // If searching for a future date, return strictly that day's flights [00:00, next day 00:00).
+        LocalDateTime start = request.date().isEqual(today) ? now : request.date().atStartOfDay();
+        LocalDateTime nextDayStart = request.date().plusDays(1).atStartOfDay();
+
+        return flightRepository
+                .findUpcomingDirectFlightsInRange(source, destination, start, nextDayStart, pageable)
+                .map(this::mapToResponse);
     }
 
     @Override
-    public List<FlightResponse> getAllUpcomingFlights() {
-        return flightRepository.findAll().stream()
-                .filter(f -> f.getDepartureTime().isAfter(LocalDateTime.now()))
-                .map(this::mapToResponse)
-                .toList();
+    public Page<FlightResponse> getAllUpcomingFlights(Pageable pageable) {
+        return flightRepository
+                .findByDepartureTimeAfterOrderByDepartureTimeAsc(LocalDateTime.now(), pageable)
+                .map(this::mapToResponse);
     }
 
     @Override
@@ -75,7 +87,8 @@ public class FlightServiceImpl implements FlightService {
                 flight.getDepartureTime(),
                 flight.getArrivalTime(),
                 flight.getBasePrice(),
-                flight.getStatus()
+                flight.getStatus(),
+                flight.getDelayMinutes() != null ? flight.getDelayMinutes() : 0
         );
     }
 }
