@@ -1,11 +1,12 @@
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider, AuthContext } from './context/AuthContext';
 import { useContext } from 'react';
-import { Plane, Shield } from 'lucide-react';
+import { Plane, Shield, MapPin } from 'lucide-react';
 import AuthPage from './pages/AuthPage';
 import HomePage from './pages/HomePage';
 import Dashboard from './pages/Dashboard';
-import AdminDashboard from './pages/AdminDashboard'; // <-- IMPORT NEW PAGE
+import AdminDashboard from './pages/AdminDashboard';
+import AdminAirportsPage from './pages/AdminAirportsPage';
 
 // --- NAVBAR ---
 const Navbar = () => {
@@ -22,11 +23,16 @@ const Navbar = () => {
                     <div className="flex items-center space-x-4">
                         <span className="text-sm text-gray-600">Hi, {user.email}</span>
                         
-                        {/* Show Admin Link ONLY if user is an ADMIN */}
+                        {/* Show Admin Links ONLY if user is an ADMIN */}
                         {user.role === 'ADMIN' && (
-                            <Link to="/admin" className="text-red-600 flex items-center hover:text-red-700 font-medium text-sm">
-                                <Shield className="w-4 h-4 mr-1" /> Admin
-                            </Link>
+                            <>
+                                <Link to="/admin" className="text-red-600 flex items-center hover:text-red-700 font-medium text-sm">
+                                    <Shield className="w-4 h-4 mr-1" /> Admin
+                                </Link>
+                                <Link to="/admin/airports" className="text-red-600 flex items-center hover:text-red-700 font-medium text-sm">
+                                    <MapPin className="w-4 h-4 mr-1" /> Airports
+                                </Link>
+                            </>
                         )}
                         
                         <Link to="/dashboard" className="text-gray-600 hover:text-blue-600 font-medium text-sm">Dashboard</Link>
@@ -70,8 +76,9 @@ function App() {
                         <Route path="/login" element={<AuthPage />} />
                         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                         
-                        {/* Secure Admin Route */}
+                        {/* Secure Admin Routes */}
                         <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+                        <Route path="/admin/airports" element={<AdminRoute><AdminAirportsPage /></AdminRoute>} />
                     </Routes>
                 </div>
             </BrowserRouter>

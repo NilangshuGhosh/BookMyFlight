@@ -77,6 +77,23 @@ public class FlightServiceImpl implements FlightService {
         return flights.map(this::mapToResponse);
     }
 
+    @Override
+    public Page<FlightResponse> getAdminFlights(String query, String status, boolean includeDeparted, Pageable pageable) {
+        String sanitizedQuery = query != null ? query.trim() : "";
+        Long queryId = null;
+        if (sanitizedQuery.matches("^\\d+$")) {
+            try {
+                queryId = Long.parseLong(sanitizedQuery);
+            } catch (NumberFormatException ignored) {
+                queryId = null;
+            }
+        }
+        String normalizedStatus = (status != null && !status.isBlank()) ? status.trim().toUpperCase() : "ALL";
+        return flightRepository
+                .searchAdminFlights(sanitizedQuery, queryId, normalizedStatus, includeDeparted, LocalDateTime.now(), pageable)
+                .map(this::mapToResponse);
+    }
+
     private FlightResponse mapToResponse(Flight flight) {
         return new FlightResponse(
                 flight.getId(),

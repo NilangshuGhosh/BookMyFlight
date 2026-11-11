@@ -2,8 +2,9 @@ import { useState, useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import api from '../api/axios';
-import { Search, MapPin, Calendar, Filter } from 'lucide-react';
+import { Search, Calendar, Filter } from 'lucide-react';
 import FlightCard from '../components/FlightCard';
+import AirportSelect from '../components/AirportSelect';
 
 const getLocalTodayString = () => {
     const now = new Date();
@@ -19,10 +20,10 @@ const HomePage = () => {
     const todayStr = getLocalTodayString();
 
     const [airports, setAirports] = useState([
-        { airportCode: 'CCU', cityName: 'Kolkata' },
-        { airportCode: 'DEL', cityName: 'Delhi' },
-        { airportCode: 'BLR', cityName: 'Bengaluru' },
-        { airportCode: 'BOM', cityName: 'Mumbai' }
+        { airportCode: 'CCU', cityName: 'Kolkata', airportName: 'Netaji Subhas Chandra Bose International Airport' },
+        { airportCode: 'DEL', cityName: 'Delhi', airportName: 'Indira Gandhi International Airport' },
+        { airportCode: 'BLR', cityName: 'Bengaluru', airportName: 'Kempegowda International Airport' },
+        { airportCode: 'BOM', cityName: 'Mumbai', airportName: 'Chhatrapati Shivaji Maharaj International Airport' }
     ]);
 
     useEffect(() => {
@@ -183,39 +184,31 @@ const HomePage = () => {
                 <h1 className="text-3xl font-bold mb-2">Where are you flying?</h1>
                 <p className="text-blue-100 mb-6">Discover the best flights for your next journey.</p>
                 
-                <form onSubmit={handleSearch} className="flex flex-col md:flex-row gap-4 bg-white p-4 rounded-xl shadow-sm">
-                    <div className="flex-1 flex items-center border rounded-lg px-3 py-2 text-gray-900">
-                        <MapPin className="w-5 h-5 text-gray-400 mr-2" />
-                        <select 
-                            className="w-full bg-transparent outline-none cursor-pointer"
+                <form onSubmit={handleSearch} className="flex flex-col md:flex-row md:items-center gap-3 bg-white p-4 rounded-xl shadow-md">
+                    <div className="flex-1 min-w-0 flex items-center border border-gray-200 rounded-lg px-3 py-2 text-gray-900">
+                        <AirportSelect
+                            airports={airports}
                             value={searchParams.source}
-                            onChange={(e) => setSearchParams({ ...searchParams, source: e.target.value })}
-                        >
-                            {airports.map(apt => (
-                                <option key={`src-${apt.airportCode}`} value={apt.airportCode}>{apt.cityName} ({apt.airportCode})</option>
-                            ))}
-                        </select>
+                            onChange={(code) => setSearchParams({ ...searchParams, source: code })}
+                            placeholder="From airport"
+                        />
                     </div>
 
-                    <div className="flex-1 flex items-center border rounded-lg px-3 py-2 text-gray-900">
-                        <MapPin className="w-5 h-5 text-gray-400 mr-2" />
-                        <select 
-                            className="w-full bg-transparent outline-none cursor-pointer"
+                    <div className="flex-1 min-w-0 flex items-center border border-gray-200 rounded-lg px-3 py-2 text-gray-900">
+                        <AirportSelect
+                            airports={airports}
                             value={searchParams.destination}
-                            onChange={(e) => setSearchParams({ ...searchParams, destination: e.target.value })}
-                        >
-                            {airports.map(apt => (
-                                <option key={`dest-${apt.airportCode}`} value={apt.airportCode}>{apt.cityName} ({apt.airportCode})</option>
-                            ))}
-                        </select>
+                            onChange={(code) => setSearchParams({ ...searchParams, destination: code })}
+                            placeholder="To airport"
+                        />
                     </div>
 
-                    <div className="flex-1 flex items-center border rounded-lg px-3 py-2 text-gray-900">
-                        <Calendar className="w-5 h-5 text-gray-400 mr-2" />
+                    <div className="flex-1 min-w-0 flex items-center border border-gray-200 rounded-lg px-3 py-2 text-gray-900">
+                        <Calendar className="w-5 h-5 text-gray-400 mr-2 shrink-0" />
                         <input 
                             type="date" 
                             min={todayStr}
-                            className="w-full bg-transparent outline-none"
+                            className="w-full min-w-0 bg-transparent outline-none"
                             value={searchParams.date}
                             onChange={(e) => setSearchParams({ ...searchParams, date: e.target.value })}
                         />
@@ -223,7 +216,7 @@ const HomePage = () => {
                             <button
                                 type="button"
                                 onClick={() => setSearchParams({ ...searchParams, date: '' })}
-                                className="ml-2 text-xs text-gray-400 hover:text-red-500 font-medium"
+                                className="ml-2 text-xs text-gray-400 hover:text-red-500 font-medium shrink-0"
                             >
                                 Clear
                             </button>
@@ -233,7 +226,7 @@ const HomePage = () => {
                     <button 
                         type="submit" 
                         disabled={loading}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center min-w-[120px]"
+                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center shrink-0 cursor-pointer"
                     >
                         {loading ? 'Searching...' : <><Search className="w-4 h-4 mr-2"/> Search</>}
                     </button>

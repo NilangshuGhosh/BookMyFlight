@@ -12,4 +12,5 @@ public interface FlightService {
     Page<FlightResponse> searchDirectFlights(FlightSearchRequest request, Pageable pageable);
     Page<FlightResponse> getAllUpcomingFlights(Pageable pageable);
     Page<FlightResponse> getDepartedFlights(LocalDate date, Pageable pageable);
+    Page<FlightResponse> getAdminFlights(String query, String status, boolean includeDeparted, Pageable pageable);
 }

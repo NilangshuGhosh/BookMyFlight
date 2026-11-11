@@ -383,3 +383,88 @@ Problems & Vulnerabilities Addressed:
   each browser profile on each machine; logging in on one browser/device never
   shares tokens or logs in another browser/device, even across server restarts.
 ================================================================================
+
+
+================================================================================
+9. UPDATE LOG - ADMIN AIRPORT MANAGEMENT (2026-11-10)
+================================================================================
+Completed Task #1 (Admin Airport Management) building on the user's draft files:
+
+Files Created / Updated:
+1. `demo/src/main/resources/db/migration/V5__unique_airport_name.sql` (User draft kept)
+   - Enforces case-insensitive uniqueness on `airports(LOWER(airport_name))`
+     at the PostgreSQL level alongside the primary key `airport_code`.
+
+2. `demo/src/main/java/com/example/demo/dto/AirportCreateRequest.java` (New)
+   - Record DTO (`airportCode`, `cityName`, `airportName`) replacing unfinished
+     `@RequestParam` parameters in `AdminAirportController.createAirport` to
+     stay consistent with `AdminFlightController`'s JSON `@RequestBody` pattern.
+
+3. `demo/src/main/java/com/example/demo/repository/AirportRepository.java` (Updated)
+   - Added `existsByAirportCodeIgnoreCase`, `existsByAirportNameIgnoreCase`, and
+     paginated JPQL `searchAirports(query, pageable)` matching code, city name,
+     or airport name case-insensitively.
+
+4. `demo/src/main/java/com/example/demo/service/AirportService.java` &
+   `demo/src/main/java/com/example/demo/service/AirportServiceImpl.java` (Completed)
+   - Converted `AirportService` into a service interface with
+     `AirportServiceImpl` implementing paginated admin search and strict creation
+     validation (2-10 alphanumeric code, trimmed/non-blank fields, length
+     limits, and duplicate code/name checks).
+
+5. `demo/src/main/java/com/example/demo/controller/AdminAirportController.java` (Completed)
+   - Implemented `GET /api/admin/airports` (`query`, `page`, `size`, `sortBy`)
+     and `POST /api/admin/airports/create` returning `201 Created`, `400 Bad
+     Request` on validation errors, and `409 Conflict` on duplicate code/name.
+
+6. `frontend/src/pages/AdminAirportsPage.jsx` (Completed)
+   - Built the admin-only Airport Management page featuring search, sorting
+     (`city_asc`, `name_asc`, `code_asc`), pagination (`size: 8`), Add New
+     Airport form, and a Warning Confirmation Pop-up Modal before creation.
+
+7. `frontend/src/App.jsx` & `frontend/src/pages/AdminDashboard.jsx` (Updated)
+   - Fixed the missing import / component name mismatch (`AdminAirPorts` ->
+     `AdminAirportsPage`) on `<Route path="/admin/airports" />` protected by
+     `<AdminRoute>`.
+   - Added an admin-only "Airports" Navbar link in `App.jsx` and a "Manage
+     Airports" button in `AdminDashboard.jsx`. Normal users cannot see links to
+     or access `/admin/airports`.
+================================================================================
+
+
+================================================================================
+10. UPDATE LOG - ADMIN FLIGHT SEARCH/SORT & ELEVATED AIRPORT SELECTOR (2026-11-11)
+================================================================================
+Completed Task #2 (Admin Flight Search, Sort, Filter & Paging) and Task #3
+(Option B - Elevated Searchable Airport Selector):
+
+1. Backend Admin Flight Search & Filtering:
+   - `demo/src/main/java/com/example/demo/repository/FlightRepository.java`:
+     Added JPQL `searchAdminFlights` joining `Airport src` and `Airport dst` to
+     match Flight ID, flight number, airline, airport codes, city names, and
+     airport names with `status`, `includeDeparted`, and `Pageable` support.
+   - `demo/src/main/java/com/example/demo/service/FlightService.java` &
+     `FlightServiceImpl.java`: Added `getAdminFlights(...)`.
+   - `demo/src/main/java/com/example/demo/controller/AdminFlightController.java`:
+     Exposed `GET /api/admin/flights` accepting `query`, `status`,
+     `includeDeparted`, `sortBy` (`departure_asc`, `departure_desc`, `price_asc`,
+     `price_desc`, `id_desc`), `page`, and `size`.
+
+2. Backend Airport Dropdown Ordering:
+   - `demo/src/main/java/com/example/demo/controller/AirportController.java`:
+     Updated `GET /api/airports` to sort by `cityName` ASC, then `airportName`
+     ASC so multiple airports in the same city appear in predictable order.
+
+3. Frontend Elevated Searchable `<AirportSelect />` & Admin Toolbar:
+   - Created `frontend/src/components/AirportSelect.jsx`: Elevated floating
+     dropdown card showing `cityName`, `airportCode` badge, and full
+     `airportName` subtitle, sorted alphabetically with live type-to-filter
+     across city, airport name, and code.
+   - Updated `frontend/src/pages/HomePage.jsx`: Integrated `<AirportSelect />`
+     into the flight search hero bar and included `airportName` in initial
+     fallback state.
+   - Updated `frontend/src/pages/AdminDashboard.jsx`: Switched inventory fetch
+     to `GET /api/admin/flights`, added search/status/sort/`Show Past Flights`
+     toolbar, locked actions on already-departed rows, and integrated
+     `<AirportSelect />` into the Create Flight form.
+================================================================================

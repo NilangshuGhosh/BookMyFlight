@@ -1,9 +1,15 @@
 package com.example.demo.controller;
 
 import com.example.demo.dto.FlightCreateRequest;
+import com.example.demo.dto.FlightResponse;
 import com.example.demo.entity.Flight;
 import com.example.demo.repository.AirportRepository;
 import com.example.demo.repository.FlightRepository;
+import com.example.demo.service.FlightService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,10 +24,39 @@ public class AdminFlightController {
 
     private final FlightRepository flightRepository;
     private final AirportRepository airportRepository;
+    private final FlightService flightService;
 
-    public AdminFlightController(FlightRepository flightRepository, AirportRepository airportRepository) {
+    public AdminFlightController(FlightRepository flightRepository,
+                                 AirportRepository airportRepository,
+                                 FlightService flightService) {
         this.flightRepository = flightRepository;
         this.airportRepository = airportRepository;
+        this.flightService = flightService;
+    }
+
+    /**
+     * Paginated, searchable, and sortable flight inventory endpoint for AdminDashboard.
+     * Example: GET /api/admin/flights?query=CCU&status=ALL&includeDeparted=false&sortBy=departure_asc&page=0&size=10
+     */
+    @GetMapping
+    public ResponseEntity<Page<FlightResponse>> getAdminFlights(
+            @RequestParam(required = false, defaultValue = "") String query,
+            @RequestParam(required = false, defaultValue = "ALL") String status,
+            @RequestParam(defaultValue = "false") boolean includeDeparted,
+            @RequestParam(defaultValue = "departure_asc") String sortBy,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+
+        Sort sort = switch (sortBy) {
+            case "departure_desc" -> Sort.by(Sort.Direction.DESC, "departureTime");
+            case "price_asc" -> Sort.by(Sort.Direction.ASC, "basePrice");
+            case "price_desc" -> Sort.by(Sort.Direction.DESC, "basePrice");
+            case "id_desc" -> Sort.by(Sort.Direction.DESC, "id");
+            default -> Sort.by(Sort.Direction.ASC, "departureTime");
+        };
+
+        Pageable pageable = PageRequest.of(page, size, sort);
+        return ResponseEntity.ok(flightService.getAdminFlights(query, status, includeDeparted, pageable));
     }
 
     /**

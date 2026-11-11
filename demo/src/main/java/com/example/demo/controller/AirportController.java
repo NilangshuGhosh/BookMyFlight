@@ -24,6 +24,8 @@ public class AirportController {
 
     @GetMapping
     public ResponseEntity<List<Airport>> getAllAirports() {
-        return ResponseEntity.ok(airportRepository.findAll(Sort.by(Sort.Direction.ASC, "cityName")));
+        return ResponseEntity.ok(
+                airportRepository.findAll(Sort.by(Sort.Order.asc("cityName"), Sort.Order.asc("airportName")))
+        );
     }
 }

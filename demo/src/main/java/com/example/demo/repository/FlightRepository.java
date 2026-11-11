@@ -44,4 +44,33 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
 
     // Finds departed flights within a specific date range with pagination
     Page<Flight> findByDepartureTimeBetweenOrderByDepartureTimeDesc(LocalDateTime start, LocalDateTime end, Pageable pageable);
+
+    // Admin search across flight ID, number, airline, airport codes, and city/airport names
+    @Query("""
+            SELECT f FROM Flight f
+            LEFT JOIN Airport src ON src.airportCode = f.sourceAirportCode
+            LEFT JOIN Airport dst ON dst.airportCode = f.destinationAirportCode
+            WHERE (:includeDeparted = true OR f.departureTime > :now)
+              AND (:status = 'ALL' OR UPPER(f.status) = UPPER(:status))
+              AND (
+                  :query = ''
+                  OR (:queryId IS NOT NULL AND f.id = :queryId)
+                  OR LOWER(f.flightNumber) LIKE LOWER(CONCAT('%', :query, '%'))
+                  OR LOWER(f.airline) LIKE LOWER(CONCAT('%', :query, '%'))
+                  OR LOWER(f.sourceAirportCode) LIKE LOWER(CONCAT('%', :query, '%'))
+                  OR LOWER(f.destinationAirportCode) LIKE LOWER(CONCAT('%', :query, '%'))
+                  OR LOWER(src.cityName) LIKE LOWER(CONCAT('%', :query, '%'))
+                  OR LOWER(dst.cityName) LIKE LOWER(CONCAT('%', :query, '%'))
+                  OR LOWER(src.airportName) LIKE LOWER(CONCAT('%', :query, '%'))
+                  OR LOWER(dst.airportName) LIKE LOWER(CONCAT('%', :query, '%'))
+              )
+            """)
+    Page<Flight> searchAdminFlights(
+            @Param("query") String query,
+            @Param("queryId") Long queryId,
+            @Param("status") String status,
+            @Param("includeDeparted") boolean includeDeparted,
+            @Param("now") LocalDateTime now,
+            Pageable pageable
+    );
 }

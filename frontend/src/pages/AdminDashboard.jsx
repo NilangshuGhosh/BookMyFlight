@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../api/axios';
+import AirportSelect from '../components/AirportSelect';
 import {
     ShieldAlert,
     CheckCircle,
@@ -10,7 +12,9 @@ import {
     Ban,
     Info,
     Plane,
-    AlertTriangle
+    AlertTriangle,
+    MapPin,
+    Search
 } from 'lucide-react';
 
 const formatDuration = (departureTime, arrivalTime) => {
@@ -49,6 +53,14 @@ const AdminDashboard = () => {
     const [message, setMessage] = useState('');
     const [page, setPage] = useState(0);
     const [totalPages, setTotalPages] = useState(1);
+    const [totalElements, setTotalElements] = useState(0);
+
+    // Admin flight search, filtering & sorting state
+    const [searchInput, setSearchInput] = useState('');
+    const [activeQuery, setActiveQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState('ALL');
+    const [includeDeparted, setIncludeDeparted] = useState(false);
+    const [sortBy, setSortBy] = useState('departure_asc');
 
     // Creation form toggle & state
     const [showForm, setShowForm] = useState(false);
@@ -77,19 +89,35 @@ const AdminDashboard = () => {
         if (data && Array.isArray(data.content)) {
             setFlights(data.content);
             setTotalPages(data.totalPages || 1);
+            setTotalElements(data.totalElements ?? data.content.length);
         } else if (Array.isArray(data)) {
             setFlights(data);
             setTotalPages(1);
+            setTotalElements(data.length);
         } else {
             setFlights([]);
             setTotalPages(1);
+            setTotalElements(0);
         }
     };
 
-    const fetchFlights = async (targetPage = page) => {
+    const fetchFlights = async (
+        targetPage = page,
+        targetQuery = activeQuery,
+        targetStatus = statusFilter,
+        targetIncludeDeparted = includeDeparted,
+        targetSortBy = sortBy
+    ) => {
         try {
-            const response = await api.get('/flights/upcoming', {
-                params: { page: targetPage, size: 10 }
+            const response = await api.get('/admin/flights', {
+                params: {
+                    query: targetQuery,
+                    status: targetStatus,
+                    includeDeparted: targetIncludeDeparted,
+                    sortBy: targetSortBy,
+                    page: targetPage,
+                    size: 10
+                }
             });
             applyFlightsResponse(response.data);
         } catch {
@@ -101,16 +129,10 @@ const AdminDashboard = () => {
 
     useEffect(() => {
         let active = true;
-        const loadInitialData = async () => {
+        const loadAirports = async () => {
             try {
-                const [flightsRes, airportsRes] = await Promise.all([
-                    api.get('/flights/upcoming', { params: { page, size: 10 } }),
-                    api.get('/airports')
-                ]);
+                const airportsRes = await api.get('/airports');
                 if (!active) return;
-
-                applyFlightsResponse(flightsRes.data);
-
                 if (Array.isArray(airportsRes.data)) {
                     setAirports(airportsRes.data);
                     if (airportsRes.data.length >= 2) {
@@ -122,16 +144,55 @@ const AdminDashboard = () => {
                     }
                 }
             } catch {
-                if (active) setError('Failed to load admin data.');
+                // Handled by flight fetch error if backend unavailable
+            }
+        };
+        loadAirports();
+        return () => {
+            active = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        let active = true;
+        const loadFlights = async () => {
+            try {
+                const flightsRes = await api.get('/admin/flights', {
+                    params: {
+                        query: activeQuery,
+                        status: statusFilter,
+                        includeDeparted,
+                        sortBy,
+                        page,
+                        size: 10
+                    }
+                });
+                if (!active) return;
+                applyFlightsResponse(flightsRes.data);
+            } catch {
+                if (active) setError('Failed to load admin flights.');
             } finally {
                 if (active) setLoading(false);
             }
         };
-        loadInitialData();
+        loadFlights();
         return () => {
             active = false;
         };
-    }, [page]);
+    }, [activeQuery, statusFilter, includeDeparted, sortBy, page]);
+
+    const handleSearchSubmit = (e) => {
+        e.preventDefault();
+        setError('');
+        setPage(0);
+        setActiveQuery(searchInput.trim());
+    };
+
+    const handleClearSearch = () => {
+        setSearchInput('');
+        setActiveQuery('');
+        setPage(0);
+    };
 
     const getAirportLabel = (code) => {
         const match = airports.find((a) => a.airportCode === code);
@@ -248,12 +309,20 @@ const AdminDashboard = () => {
                     </div>
                 </div>
                 
-                <button 
-                    onClick={() => setShowForm(!showForm)}
-                    className="flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-                >
-                    {showForm ? <><X className="w-4 h-4 mr-2" /> Close Form</> : <><Plus className="w-4 h-4 mr-2" /> Add New Flight</>}
-                </button>
+                <div className="flex flex-wrap items-center gap-3">
+                    <Link
+                        to="/admin/airports"
+                        className="flex items-center border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg font-medium transition-colors"
+                    >
+                        <MapPin className="w-4 h-4 mr-2" /> Manage Airports
+                    </Link>
+                    <button 
+                        onClick={() => setShowForm(!showForm)}
+                        className="flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                    >
+                        {showForm ? <><X className="w-4 h-4 mr-2" /> Close Form</> : <><Plus className="w-4 h-4 mr-2" /> Add New Flight</>}
+                    </button>
+                </div>
             </div>
 
             {message && (
@@ -287,38 +356,26 @@ const AdminDashboard = () => {
                         </div>
                         
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Source Airport</label>
-                            <select
-                                name="sourceAirportCode"
-                                required
-                                value={formData.sourceAirportCode}
-                                onChange={handleInputChange}
-                                className="mt-1 w-full p-2 border rounded-md bg-white"
-                            >
-                                <option value="" disabled>Select source airport</option>
-                                {airports.map((apt) => (
-                                    <option key={`admin-src-${apt.airportCode}`} value={apt.airportCode}>
-                                        {apt.cityName} ({apt.airportCode}) - {apt.airportName}
-                                    </option>
-                                ))}
-                            </select>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Source Airport</label>
+                            <div className="border rounded-md px-3 py-2 bg-white">
+                                <AirportSelect
+                                    airports={airports}
+                                    value={formData.sourceAirportCode}
+                                    onChange={(code) => setFormData({ ...formData, sourceAirportCode: code })}
+                                    placeholder="Select source airport"
+                                />
+                            </div>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Destination Airport</label>
-                            <select
-                                name="destinationAirportCode"
-                                required
-                                value={formData.destinationAirportCode}
-                                onChange={handleInputChange}
-                                className="mt-1 w-full p-2 border rounded-md bg-white"
-                            >
-                                <option value="" disabled>Select destination airport</option>
-                                {airports.map((apt) => (
-                                    <option key={`admin-dest-${apt.airportCode}`} value={apt.airportCode}>
-                                        {apt.cityName} ({apt.airportCode}) - {apt.airportName}
-                                    </option>
-                                ))}
-                            </select>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Destination Airport</label>
+                            <div className="border rounded-md px-3 py-2 bg-white">
+                                <AirportSelect
+                                    airports={airports}
+                                    value={formData.destinationAirportCode}
+                                    onChange={(code) => setFormData({ ...formData, destinationAirportCode: code })}
+                                    placeholder="Select destination airport"
+                                />
+                            </div>
                         </div>
                         <div className="hidden md:block"></div>
 
@@ -360,6 +417,85 @@ const AdminDashboard = () => {
                 </div>
             )}
 
+            {/* ADMIN FLIGHT SEARCH, FILTER & SORT TOOLBAR */}
+            <div className="bg-white p-4 rounded-xl border shadow-sm space-y-3">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <form onSubmit={handleSearchSubmit} className="flex flex-1 items-center gap-2">
+                        <div className="relative flex-1 max-w-md">
+                            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                                type="text"
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                placeholder="Search by Flight ID, No., Airline, Code, or City..."
+                                className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                            Search
+                        </button>
+                        {activeQuery && (
+                            <button
+                                type="button"
+                                onClick={handleClearSearch}
+                                className="px-3 py-2 text-sm text-gray-600 hover:text-red-600 border rounded-lg"
+                            >
+                                Clear
+                            </button>
+                        )}
+                    </form>
+
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                        <span className="font-medium text-gray-700">{totalElements} flights</span>
+
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => {
+                                setStatusFilter(e.target.value);
+                                setPage(0);
+                            }}
+                            className="border rounded-lg px-3 py-2 bg-white text-gray-800 font-medium outline-none"
+                        >
+                            <option value="ALL">Status: All</option>
+                            <option value="SCHEDULED">Scheduled</option>
+                            <option value="DELAYED">Delayed</option>
+                            <option value="CANCELLED">Cancelled</option>
+                        </select>
+
+                        <select
+                            value={sortBy}
+                            onChange={(e) => {
+                                setSortBy(e.target.value);
+                                setPage(0);
+                            }}
+                            className="border rounded-lg px-3 py-2 bg-white text-gray-800 font-medium outline-none"
+                        >
+                            <option value="departure_asc">Sort: Departure (Earliest)</option>
+                            <option value="departure_desc">Sort: Departure (Latest)</option>
+                            <option value="price_asc">Sort: Price (Low to High)</option>
+                            <option value="price_desc">Sort: Price (High to Low)</option>
+                            <option value="id_desc">Sort: Flight ID (Newest)</option>
+                        </select>
+
+                        <label className="inline-flex items-center space-x-2 cursor-pointer select-none bg-gray-50 border rounded-lg px-3 py-2">
+                            <input
+                                type="checkbox"
+                                checked={includeDeparted}
+                                onChange={(e) => {
+                                    setIncludeDeparted(e.target.checked);
+                                    setPage(0);
+                                }}
+                                className="rounded text-blue-600"
+                            />
+                            <span className="text-gray-700 font-medium">Show Past Flights</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
             {/* FLIGHT INVENTORY TABLE */}
             <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
                 <table className="w-full text-left border-collapse">
@@ -376,13 +512,14 @@ const AdminDashboard = () => {
                         {flights.length === 0 ? (
                             <tr>
                                 <td colSpan="5" className="p-8 text-center text-gray-500">
-                                    No upcoming flights found.
+                                    No flights found matching your filters.
                                 </td>
                             </tr>
                         ) : (
                             flights.map((flight) => {
                                 const isCancelled = flight.status === 'CANCELLED';
                                 const isDelayed = flight.status === 'DELAYED';
+                                const isDeparted = new Date(flight.departureTime) < new Date();
 
                                 return (
                                     <tr
@@ -392,7 +529,7 @@ const AdminDashboard = () => {
                                     >
                                         <td className="p-4 font-medium text-gray-900">
                                             {flight.airline} <br/>
-                                            <span className="text-sm text-gray-500">{flight.flightNumber}</span>
+                                            <span className="text-sm text-gray-500">#{flight.id} • {flight.flightNumber}</span>
                                         </td>
                                         <td className="p-4">
                                             {flight.sourceAirportCode} → {flight.destinationAirportCode}
@@ -425,7 +562,11 @@ const AdminDashboard = () => {
                                                 <Info className="w-3.5 h-3.5 mr-1" /> Details
                                             </button>
 
-                                            {!isCancelled ? (
+                                            {isDeparted ? (
+                                                <span className="text-xs font-medium text-gray-500 italic ml-2">
+                                                    Departed (Locked)
+                                                </span>
+                                            ) : !isCancelled ? (
                                                 <>
                                                     <button
                                                         type="button"
@@ -574,7 +715,11 @@ const AdminDashboard = () => {
                             </div>
                         </div>
 
-                        {selectedFlight.status !== 'CANCELLED' ? (
+                        {new Date(selectedFlight.departureTime) < new Date() ? (
+                            <div className="p-3 bg-gray-100 border border-gray-200 rounded-lg text-sm text-gray-600">
+                                This flight has already departed and can no longer be modified.
+                            </div>
+                        ) : selectedFlight.status !== 'CANCELLED' ? (
                             <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t">
                                 <div className="flex flex-wrap gap-2">
                                     <button
