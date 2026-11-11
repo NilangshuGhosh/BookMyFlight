@@ -49,3 +49,6 @@ frontend/.env
 .idea/
 *.iml
 .vscode/
+#environment Variables:
+**/.env.local
+.env.local

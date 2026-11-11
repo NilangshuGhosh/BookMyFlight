@@ -468,3 +468,34 @@ Completed Task #2 (Admin Flight Search, Sort, Filter & Paging) and Task #3
      toolbar, locked actions on already-departed rows, and integrated
      `<AirportSelect />` into the Create Flight form.
 ================================================================================
+
+
+================================================================================
+11. UPDATE LOG - EXTERNALIZED SECRETS TO ENVIRONMENT VARIABLES (2026-11-11)
+================================================================================
+- Fixed why secret externalization failed in the user's draft:
+  1) `${...}` placeholders are not valid Java syntax (`JwtUtils.java`) and
+     `static final` fields cannot be populated by Spring `@Value`.
+  2) Spring Boot does not auto-load `.env.local` files without
+     `spring.config.import`, and keeping `.env.local` inside
+     `src/main/resources/` causes Maven to package secrets into `target/classes`
+     and the `.jar`.
+  3) `export KEY = "VAL";` bash syntax is invalid for Spring `.properties`
+     loading (quotes, spaces, `export`, and `;` become part of keys/values).
+
+- Files Created / Updated:
+  1) `demo/.env.local` (ignored by `demo/.gitignore`, moved out of
+     `src/main/resources/`) & `demo/.env.example` (safe committed template).
+  2) `demo/src/main/resources/application.properties`: Added
+     `spring.config.import=optional:file:.env.local[.properties],optional:file:demo/.env.local[.properties]`
+     and externalized `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`,
+     `JWT_EXPIRATION_MS`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `MAIL_USERNAME`, and
+     `MAIL_PASSWORD`.
+  3) `demo/src/main/java/com/example/demo/security/JwtUtils.java`: Replaced
+     hardcoded/invalid static field with constructor-injected
+     `@Value("${app.jwt.secret}")` and `@Value("${app.jwt.expiration-ms:86400000}")`,
+     plus 256-bit (32-byte) key length validation.
+  4) `demo/src/main/java/com/example/demo/DataSeeder.java`: Replaced hardcoded
+     admin password with `@Value("${app.admin.email}")` and
+     `@Value("${app.admin.password:}")`.
+================================================================================
