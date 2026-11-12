@@ -105,7 +105,9 @@ public class FlightServiceImpl implements FlightService {
                 flight.getArrivalTime(),
                 flight.getBasePrice(),
                 flight.getStatus(),
-                flight.getDelayMinutes() != null ? flight.getDelayMinutes() : 0
+                flight.getDelayMinutes() != null ? flight.getDelayMinutes() : 0,
+                flight.getTotalSeats() != null ? flight.getTotalSeats() : 180,
+                flight.getAvailableSeats() != null ? flight.getAvailableSeats() : 180
         );
     }
 }

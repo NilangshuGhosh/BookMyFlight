@@ -16,6 +16,7 @@ public record AdminBookingResponse(
     String destinationAirport,
     LocalDateTime departureTime,
     String flightStatus,
+    Integer seatsBooked,
     BigDecimal totalPrice,
     String status,
     LocalDateTime createdAt

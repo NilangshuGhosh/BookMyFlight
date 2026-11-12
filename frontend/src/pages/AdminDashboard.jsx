@@ -72,7 +72,8 @@ const AdminDashboard = () => {
         destinationAirportCode: '',
         departureTime: '',
         arrivalTime: '',
-        basePrice: ''
+        basePrice: '',
+        totalSeats: '180'
     });
 
     // Modals: full flight details & status update confirmation
@@ -282,7 +283,8 @@ const AdminDashboard = () => {
                 flightNumber: '',
                 departureTime: '',
                 arrivalTime: '',
-                basePrice: ''
+                basePrice: '',
+                totalSeats: '180'
             }));
             await fetchFlights(page);
         } catch (err) {
@@ -360,6 +362,10 @@ const AdminDashboard = () => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Base Price (₹)</label>
                             <input type="number" min="1" step="0.01" name="basePrice" placeholder="5000" required value={formData.basePrice} onChange={handleInputChange} className="mt-1 w-full p-2 border rounded-md" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Total Seats</label>
+                            <input type="number" min="1" max="1000" name="totalSeats" placeholder="180" required value={formData.totalSeats} onChange={handleInputChange} className="mt-1 w-full p-2 border rounded-md" />
                         </div>
                         
                         <div>
@@ -511,6 +517,7 @@ const AdminDashboard = () => {
                             <th className="p-4">Flight</th>
                             <th className="p-4">Route</th>
                             <th className="p-4">Departure</th>
+                            <th className="p-4">Seats (Avail/Total)</th>
                             <th className="p-4">Current Status</th>
                             <th className="p-4 text-right">Actions</th>
                         </tr>
@@ -518,7 +525,7 @@ const AdminDashboard = () => {
                     <tbody className="divide-y divide-gray-100">
                         {flights.length === 0 ? (
                             <tr>
-                                <td colSpan="5" className="p-8 text-center text-gray-500">
+                                <td colSpan="6" className="p-8 text-center text-gray-500">
                                     No flights found matching your filters.
                                 </td>
                             </tr>
@@ -545,6 +552,17 @@ const AdminDashboard = () => {
                                             {new Date(flight.departureTime).toLocaleString([], {
                                                 month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                                             })}
+                                        </td>
+                                        <td className="p-4">
+                                            <span className={`text-sm font-semibold ${
+                                                (flight.availableSeats ?? 0) === 0
+                                                    ? 'text-red-600'
+                                                    : (flight.availableSeats ?? 0) <= 10
+                                                    ? 'text-amber-700'
+                                                    : 'text-gray-800'
+                                            }`}>
+                                                {flight.availableSeats ?? 180} / {flight.totalSeats ?? 180}
+                                            </span>
                                         </td>
                                         <td className="p-4">
                                             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
@@ -700,7 +718,7 @@ const AdminDashboard = () => {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-4 text-center">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                             <div className="p-3 border rounded-xl">
                                 <div className="text-xs text-gray-500">Duration</div>
                                 <div className="font-bold text-gray-900 mt-1">
@@ -710,6 +728,12 @@ const AdminDashboard = () => {
                             <div className="p-3 border rounded-xl">
                                 <div className="text-xs text-gray-500">Base Price</div>
                                 <div className="font-bold text-gray-900 mt-1">₹{selectedFlight.basePrice}</div>
+                            </div>
+                            <div className="p-3 border rounded-xl">
+                                <div className="text-xs text-gray-500">Seats (Avail / Total)</div>
+                                <div className="font-bold text-gray-900 mt-1">
+                                    {selectedFlight.availableSeats ?? 180} / {selectedFlight.totalSeats ?? 180}
+                                </div>
                             </div>
                             <div className="p-3 border rounded-xl">
                                 <div className="text-xs text-gray-500">Status</div>

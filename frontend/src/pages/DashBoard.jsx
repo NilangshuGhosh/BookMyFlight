@@ -129,9 +129,12 @@ const Dashboard = () => {
                             </div>
 
                             <div className="mt-6 md:mt-0 md:border-l md:pl-8 flex flex-col items-center justify-center min-w-[200px]">
-                                <div className="flex items-center text-gray-500 mb-2 text-sm">
+                                <div className="flex items-center text-gray-500 mb-1 text-sm">
                                     <Calendar className="w-4 h-4 mr-2" />
                                     Booked: {new Date(booking.createdAt).toLocaleDateString()}
+                                </div>
+                                <div className="text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full mb-2">
+                                    {booking.seatsBooked ?? 1} {(booking.seatsBooked ?? 1) === 1 ? 'Seat' : 'Seats'}
                                 </div>
                                 <div className="text-2xl font-bold text-gray-900">
                                     ₹{booking.totalPrice}

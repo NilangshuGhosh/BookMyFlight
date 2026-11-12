@@ -11,6 +11,7 @@ public record BookingResponse(
     String airline,
     String sourceAirport,
     String destinationAirport,
+    Integer seatsBooked,
     BigDecimal totalPrice,
     String status,
     LocalDateTime createdAt

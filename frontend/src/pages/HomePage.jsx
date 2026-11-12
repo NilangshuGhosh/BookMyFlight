@@ -162,7 +162,7 @@ const HomePage = () => {
         await fetchSearchFlights(activeSearchParams, 0, newSortBy);
     };
 
-    const handleBookFlight = async (flightId) => {
+    const handleBookFlight = async (flightId, seatsBooked = 1) => {
         if (!user) {
             navigate('/login');
             return;
@@ -170,7 +170,7 @@ const HomePage = () => {
 
         setBookingState({ id: flightId, loading: true });
         try {
-            await api.post('/bookings/create', { flightId });
+            await api.post('/bookings/create', { flightId, seatsBooked });
             navigate('/dashboard');
         } catch (err) {
             alert(err.response?.data?.message || 'Failed to book flight.');

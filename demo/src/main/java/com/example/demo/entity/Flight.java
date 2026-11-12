@@ -43,6 +43,12 @@ public class Flight {
     @Column(name = "delay_minutes", nullable = false)
     private Integer delayMinutes = 0;
 
+    @Column(name = "total_seats", nullable = false)
+    private Integer totalSeats = 180;
+
+    @Column(name = "available_seats", nullable = false)
+    private Integer availableSeats = 180;
+
     public Flight() {
     }
 
@@ -136,6 +142,22 @@ public class Flight {
 
     public void setDelayMinutes(Integer delayMinutes) {
         this.delayMinutes = delayMinutes != null ? delayMinutes : 0;
+    }
+
+    public Integer getTotalSeats() {
+        return totalSeats;
+    }
+
+    public void setTotalSeats(Integer totalSeats) {
+        this.totalSeats = totalSeats != null ? totalSeats : 180;
+    }
+
+    public Integer getAvailableSeats() {
+        return availableSeats;
+    }
+
+    public void setAvailableSeats(Integer availableSeats) {
+        this.availableSeats = availableSeats != null ? availableSeats : 180;
     }
 }
 

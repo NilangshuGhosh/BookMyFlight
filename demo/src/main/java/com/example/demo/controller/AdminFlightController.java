@@ -105,6 +105,8 @@ public class AdminFlightController {
         newFlight.setBasePrice(request.basePrice());
         newFlight.setStatus("SCHEDULED");
         newFlight.setDelayMinutes(0);
+        newFlight.setTotalSeats(request.totalSeats());
+        newFlight.setAvailableSeats(request.totalSeats());
 
         flightRepository.save(newFlight);
 

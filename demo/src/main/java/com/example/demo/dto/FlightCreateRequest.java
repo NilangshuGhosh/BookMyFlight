@@ -1,6 +1,8 @@
 package com.example.demo.dto;
 
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -28,5 +30,10 @@ public record FlightCreateRequest(
 
     @NotNull(message = "Base price is required")
     @DecimalMin(value = "0.01", message = "Base price must be greater than zero")
-    BigDecimal basePrice
+    BigDecimal basePrice,
+
+    @NotNull(message = "Total seats is required")
+    @Min(value = 1, message = "Total seats must be at least 1")
+    @Max(value = 1000, message = "Total seats must be 1000 or fewer")
+    Integer totalSeats
 ) {}

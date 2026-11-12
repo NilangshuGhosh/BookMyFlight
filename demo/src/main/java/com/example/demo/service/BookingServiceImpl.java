@@ -13,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -52,13 +53,32 @@ public class BookingServiceImpl implements BookingService {
             throw new IllegalStateException("Cannot book a cancelled flight.");
         }
 
+        int seatsToBook = request.seatsBooked() != null ? request.seatsBooked() : 1;
+        if (seatsToBook < 1 || seatsToBook > 6) {
+            throw new IllegalArgumentException("You can book between 1 and 6 seats per PNR.");
+        }
+
+        int availableSeats = flight.getAvailableSeats() != null ? flight.getAvailableSeats() : 0;
+        if (availableSeats < seatsToBook) {
+            throw new IllegalStateException(
+                    availableSeats == 0
+                            ? "This flight is sold out."
+                            : "Only " + availableSeats + " seat(s) left on this flight."
+            );
+        }
+
+        flight.setAvailableSeats(availableSeats - seatsToBook);
+        flightRepository.save(flight);
+
         String uniquePnr = generatePnr();
+        BigDecimal totalPrice = flight.getBasePrice().multiply(BigDecimal.valueOf(seatsToBook));
 
         Booking booking = new Booking();
         booking.setPnr(uniquePnr);
         booking.setUserId(userId);
         booking.setFlightId(flight.getId());
-        booking.setTotalPrice(flight.getBasePrice());
+        booking.setSeatsBooked(seatsToBook);
+        booking.setTotalPrice(totalPrice);
         booking.setStatus("CONFIRMED");
 
         Booking savedBooking = bookingRepository.save(booking);
@@ -136,6 +156,7 @@ public class BookingServiceImpl implements BookingService {
                 flight != null ? flight.getAirline() : "N/A",
                 flight != null ? flight.getSourceAirportCode() : "N/A",
                 flight != null ? flight.getDestinationAirportCode() : "N/A",
+                booking.getSeatsBooked() != null ? booking.getSeatsBooked() : 1,
                 booking.getTotalPrice(),
                 booking.getStatus(),
                 booking.getCreatedAt()

@@ -36,6 +36,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
                 COALESCE(f.destinationAirportCode, 'N/A'),
                 f.departureTime,
                 COALESCE(f.status, 'N/A'),
+                b.seatsBooked,
                 b.totalPrice,
                 b.status,
                 b.createdAt

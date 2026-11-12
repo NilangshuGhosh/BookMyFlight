@@ -187,7 +187,7 @@ const AdminBookingsPage = () => {
                                 {pnrResult.airline} • {pnrResult.flightNumber} ({pnrResult.sourceAirport} → {pnrResult.destinationAirport})
                             </div>
                             <div className="text-xs text-gray-500">
-                                Booking ID #{pnrResult.id} • Flight ID #{pnrResult.flightId} • Booked {new Date(pnrResult.createdAt).toLocaleString()}
+                                Booking ID #{pnrResult.id} • Flight ID #{pnrResult.flightId} • {pnrResult.seatsBooked ?? 1} {(pnrResult.seatsBooked ?? 1) === 1 ? 'Seat' : 'Seats'} • Booked {new Date(pnrResult.createdAt).toLocaleString()}
                             </div>
                         </div>
                         <div className="text-xl font-bold text-gray-900">₹{pnrResult.totalPrice}</div>
@@ -310,7 +310,12 @@ const AdminBookingsPage = () => {
                                             {booking.departureTime && ` • ${new Date(booking.departureTime).toLocaleDateString()}`}
                                         </div>
                                     </td>
-                                    <td className="p-4 font-semibold text-gray-900">₹{booking.totalPrice}</td>
+                                    <td className="p-4">
+                                        <div className="font-semibold text-gray-900">₹{booking.totalPrice}</div>
+                                        <div className="text-xs text-gray-500">
+                                            {booking.seatsBooked ?? 1} {(booking.seatsBooked ?? 1) === 1 ? 'seat' : 'seats'}
+                                        </div>
+                                    </td>
                                     <td className="p-4">
                                         <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
                                             booking.status === 'CONFIRMED'
@@ -416,6 +421,10 @@ const AdminBookingsPage = () => {
                             <div>
                                 <div className="text-gray-500">Booking Status</div>
                                 <div className="font-bold text-gray-900">{selectedBooking.status}</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-gray-500">Seats Booked</div>
+                                <div className="font-bold text-gray-900">{selectedBooking.seatsBooked ?? 1}</div>
                             </div>
                             <div className="text-right">
                                 <div className="text-gray-500">Total Paid</div>

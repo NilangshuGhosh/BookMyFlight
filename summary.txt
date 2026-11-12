@@ -564,3 +564,39 @@ Completed Task #2 (Admin Flight Search, Sort, Filter & Paging) and Task #3
   field-level `errors` map (since `MethodArgumentNotValidException` does not
   extend `IllegalArgumentException`).
 ================================================================================
+
+
+================================================================================
+15. UPDATE LOG - V6 SEAT INVENTORY, MULTI-SEAT PNR & DYNAMIC PRICING (2026-11-12)
+================================================================================
+- Added Flyway migration `V6__seat_inventory_and_passengers.sql`:
+  - `flights`: added `total_seats` and `available_seats` (default `180`) with
+    `CHECK` constraints (`total_seats > 0`, `0 <= available_seats <= total_seats`).
+  - `bookings`: added `seats_booked` (default `1`, `CHECK (seats_booked > 0)`)
+    and `updated_at`.
+  - Backfilled `available_seats` on all existing flights (past & upcoming) by
+    subtracting any already-confirmed `bookings.seats_booked`.
+  - Created `booking_passengers` table (`id`, `booking_id`, `full_name`, `age`,
+    `gender`, `seat_number`) so multi-passenger details can be added later
+    without another Flyway migration.
+- Backend updates:
+  - `Flight.java`, `FlightCreateRequest.java`, `FlightResponse.java`,
+    `FlightServiceImpl.java`, `AdminFlightController.java`: added `totalSeats`
+    and `availableSeats` support (`1–1000` seats on flight creation).
+  - `Booking.java`, `BookingRequest.java`, `BookingResponse.java`,
+    `AdminBookingResponse.java`, `BookingRepository.java`,
+    `BookingServiceImpl.java`: added `seatsBooked` (`1–6` seats per PNR),
+    availability check, `availableSeats` decrement, and dynamic
+    `totalPrice = basePrice * seatsBooked`.
+  - (Pessimistic row locking `PESSIMISTIC_WRITE` and booking cancellation
+    deferred to the next prompt as requested.)
+- Frontend updates:
+  - `FlightCard.jsx`: displays live seat availability badge (`Sold Out`,
+    `Only X of Y seats left`, or `X / Y seats available`), seat count selector
+    (`1–6` capped by `availableSeats`), and dynamic total price (`basePrice * seats`).
+  - `HomePage.jsx`: passes `seatsBooked` to `POST /api/bookings/create`.
+  - `AdminDashboard.jsx`: added `Total Seats` input in Create Flight form and
+    `Seats (Avail/Total)` column + details modal field.
+  - `DashBoard.jsx` & `AdminBookingsPage.jsx`: display `seatsBooked` on booking
+    cards, PNR lookup, table rows, and details modal.
+================================================================================
