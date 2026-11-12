@@ -16,7 +16,6 @@ import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/flights")
-@CrossOrigin(origins = "*") // Allows React frontend requests during development
 public class FlightController {
 
     private final FlightService flightService;

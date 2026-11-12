@@ -1,12 +1,13 @@
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider, AuthContext } from './context/AuthContext';
 import { useContext } from 'react';
-import { Plane, Shield, MapPin } from 'lucide-react';
+import { Plane, Shield, MapPin, Ticket } from 'lucide-react';
 import AuthPage from './pages/AuthPage';
 import HomePage from './pages/HomePage';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminAirportsPage from './pages/AdminAirportsPage';
+import AdminBookingsPage from './pages/AdminBookingsPage';
 
 // --- NAVBAR ---
 const Navbar = () => {
@@ -31,6 +32,9 @@ const Navbar = () => {
                                 </Link>
                                 <Link to="/admin/airports" className="text-red-600 flex items-center hover:text-red-700 font-medium text-sm">
                                     <MapPin className="w-4 h-4 mr-1" /> Airports
+                                </Link>
+                                <Link to="/admin/bookings" className="text-red-600 flex items-center hover:text-red-700 font-medium text-sm">
+                                    <Ticket className="w-4 h-4 mr-1" /> Bookings
                                 </Link>
                             </>
                         )}
@@ -79,6 +83,7 @@ function App() {
                         {/* Secure Admin Routes */}
                         <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
                         <Route path="/admin/airports" element={<AdminRoute><AdminAirportsPage /></AdminRoute>} />
+                        <Route path="/admin/bookings" element={<AdminRoute><AdminBookingsPage /></AdminRoute>} />
                     </Routes>
                 </div>
             </BrowserRouter>

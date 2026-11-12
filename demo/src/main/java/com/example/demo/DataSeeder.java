@@ -18,7 +18,7 @@ public class DataSeeder implements CommandLineRunner {
     public DataSeeder(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
-            @Value("${app.admin.email:admin@bookmyflight.com}") String adminEmail,
+            @Value("${app.admin.email:}") String adminEmail,
             @Value("${app.admin.password:}") String adminPassword) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -28,12 +28,12 @@ public class DataSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        if (userRepository.findByEmail(adminEmail).isEmpty()) {
-            if (adminPassword == null || adminPassword.isBlank()) {
-                System.out.println("⚠️ ADMIN_PASSWORD not configured; skipping Genesis Admin creation.");
-                return;
-            }
+        if (adminEmail == null || adminEmail.isBlank() || adminPassword == null || adminPassword.isBlank()) {
+            System.out.println("⚠️ ADMIN_EMAIL or ADMIN_PASSWORD not configured; skipping Genesis Admin creation.");
+            return;
+        }
 
+        if (userRepository.findByEmail(adminEmail).isEmpty()) {
             User admin = new User();
             admin.setFullName("System Administrator");
             admin.setEmail(adminEmail);

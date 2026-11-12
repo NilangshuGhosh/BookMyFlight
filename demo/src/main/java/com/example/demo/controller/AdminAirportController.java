@@ -3,6 +3,7 @@ package com.example.demo.controller;
 import com.example.demo.dto.AirportCreateRequest;
 import com.example.demo.entity.Airport;
 import com.example.demo.service.AirportService;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -13,7 +14,6 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/admin/airports")
-@CrossOrigin(origins = "*")
 public class AdminAirportController {
 
     private final AirportService airportService;
@@ -48,7 +48,7 @@ public class AdminAirportController {
      * Example: POST /api/admin/airports/create
      */
     @PostMapping("/create")
-    public ResponseEntity<?> createAirport(@RequestBody AirportCreateRequest request) {
+    public ResponseEntity<?> createAirport(@Valid @RequestBody AirportCreateRequest request) {
         try {
             Airport saved = airportService.createAirport(request);
             return new ResponseEntity<>(saved, HttpStatus.CREATED);

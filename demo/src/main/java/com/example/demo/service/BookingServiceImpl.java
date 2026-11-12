@@ -1,17 +1,25 @@
 package com.example.demo.service;
 
+import com.example.demo.dto.AdminBookingResponse;
 import com.example.demo.dto.BookingRequest;
 import com.example.demo.dto.BookingResponse;
 import com.example.demo.entity.Booking;
 import com.example.demo.entity.Flight;
+import com.example.demo.exception.ResourceNotFoundException;
 import com.example.demo.repository.BookingRepository;
 import com.example.demo.repository.FlightRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class BookingServiceImpl implements BookingService {
@@ -29,8 +37,12 @@ public class BookingServiceImpl implements BookingService {
     @Override
     @Transactional
     public BookingResponse createBooking(BookingRequest request, Long userId) {
+        if (request == null || request.flightId() == null) {
+            throw new IllegalArgumentException("Flight ID is required.");
+        }
+
         Flight flight = flightRepository.findById(request.flightId())
-                .orElseThrow(() -> new IllegalArgumentException("Flight not found with ID: " + request.flightId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Flight not found with ID: " + request.flightId()));
 
         // Hard business constraint: Do not allow booking past/departed or cancelled flights
         if (flight.getDepartureTime().isBefore(LocalDateTime.now())) {
@@ -55,12 +67,22 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
-    public BookingResponse getBookingByPnr(String pnr) {
-        Booking booking = bookingRepository.findByPnr(pnr.toUpperCase())
-                .orElseThrow(() -> new IllegalArgumentException("Booking not found for PNR: " + pnr));
+    public BookingResponse getBookingByPnr(String pnr, Long userId, boolean isAdmin) {
+        if (pnr == null || pnr.isBlank()) {
+            throw new IllegalArgumentException("PNR is required.");
+        }
 
-        Flight flight = flightRepository.findById(booking.getFlightId())
-                .orElseThrow(() -> new IllegalArgumentException("Flight details not found"));
+        String normalizedPnr = pnr.trim().toUpperCase();
+        Booking booking = bookingRepository.findByPnr(normalizedPnr)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found for PNR: " + normalizedPnr));
+
+        if (!isAdmin && (userId == null || !Objects.equals(booking.getUserId(), userId))) {
+            throw new ResourceNotFoundException("Booking not found for PNR: " + normalizedPnr);
+        }
+
+        Flight flight = booking.getFlightId() != null
+                ? flightRepository.findById(booking.getFlightId()).orElse(null)
+                : null;
 
         return mapToResponse(booking, flight);
     }
@@ -68,10 +90,33 @@ public class BookingServiceImpl implements BookingService {
     @Override
     public List<BookingResponse> getUserBookings(Long userId) {
         List<Booking> bookings = bookingRepository.findByUserId(userId);
-        return bookings.stream().map(booking -> {
-            Flight flight = flightRepository.findById(booking.getFlightId()).orElse(null);
-            return mapToResponse(booking, flight);
-        }).toList();
+        List<Long> flightIds = bookings.stream()
+                .map(Booking::getFlightId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        Map<Long, Flight> flightsById = flightRepository.findAllById(flightIds).stream()
+                .collect(Collectors.toMap(Flight::getId, Function.identity()));
+
+        return bookings.stream()
+                .map(booking -> mapToResponse(booking, flightsById.get(booking.getFlightId())))
+                .toList();
+    }
+
+    @Override
+    public Page<AdminBookingResponse> getAdminBookings(String query, String status, Pageable pageable) {
+        String sanitizedQuery = query != null ? query.trim() : "";
+        Long queryId = null;
+        if (sanitizedQuery.matches("^\\d+$")) {
+            try {
+                queryId = Long.parseLong(sanitizedQuery);
+            } catch (NumberFormatException ignored) {
+                queryId = null;
+            }
+        }
+        String normalizedStatus = (status != null && !status.isBlank()) ? status.trim().toUpperCase() : "ALL";
+        return bookingRepository.searchAdminBookings(sanitizedQuery, queryId, normalizedStatus, pageable);
     }
 
     private String generatePnr() {

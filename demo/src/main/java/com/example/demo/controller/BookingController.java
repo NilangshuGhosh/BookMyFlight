@@ -5,6 +5,7 @@ import com.example.demo.dto.BookingResponse;
 import com.example.demo.entity.User;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.BookingService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,7 +15,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/bookings")
-@CrossOrigin(origins = "*")
 public class BookingController {
 
     private final BookingService bookingService;
@@ -31,7 +31,7 @@ public class BookingController {
      */
     @PostMapping("/create")
     public ResponseEntity<BookingResponse> createBooking(
-            @RequestBody BookingRequest request,
+            @Valid @RequestBody BookingRequest request,
             Principal principal) {
         
         // Extract the user securely from the JWT token
@@ -58,8 +58,12 @@ public class BookingController {
      * Fetch booking details using a PNR code.
      */
     @GetMapping("/pnr/{pnr}")
-    public ResponseEntity<BookingResponse> getBookingByPnr(@PathVariable String pnr) {
-        BookingResponse response = bookingService.getBookingByPnr(pnr);
+    public ResponseEntity<BookingResponse> getBookingByPnr(@PathVariable String pnr,Principal principal) {
+        User user = userRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new IllegalArgumentException("Authenticated user not found"));
+        boolean isAdmin="ADMIN".equals(user.getRole());
+        BookingResponse response = bookingService.getBookingByPnr(pnr,user.getId(),isAdmin);
+       
         return ResponseEntity.ok(response);
     }
 }

@@ -6,6 +6,7 @@ import com.example.demo.entity.Flight;
 import com.example.demo.repository.AirportRepository;
 import com.example.demo.repository.FlightRepository;
 import com.example.demo.service.FlightService;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -19,7 +20,6 @@ import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/admin/flights")
-@CrossOrigin(origins = "*")
 public class AdminFlightController {
 
     private final FlightRepository flightRepository;
@@ -63,7 +63,7 @@ public class AdminFlightController {
      * Create a brand new flight in the system with airport & schedule validation.
      */
     @PostMapping("/create")
-    public ResponseEntity<?> createFlight(@RequestBody FlightCreateRequest request) {
+    public ResponseEntity<?> createFlight(@Valid @RequestBody FlightCreateRequest request) {
         if (request.airline() == null || request.airline().isBlank()
                 || request.flightNumber() == null || request.flightNumber().isBlank()
                 || request.sourceAirportCode() == null || request.sourceAirportCode().isBlank()

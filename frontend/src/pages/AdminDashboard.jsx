@@ -14,7 +14,8 @@ import {
     Plane,
     AlertTriangle,
     MapPin,
-    Search
+    Search,
+    Ticket
 } from 'lucide-react';
 
 const formatDuration = (departureTime, arrivalTime) => {
@@ -315,6 +316,12 @@ const AdminDashboard = () => {
                         className="flex items-center border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg font-medium transition-colors"
                     >
                         <MapPin className="w-4 h-4 mr-2" /> Manage Airports
+                    </Link>
+                    <Link
+                        to="/admin/bookings"
+                        className="flex items-center border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg font-medium transition-colors"
+                    >
+                        <Ticket className="w-4 h-4 mr-2" /> Manage Bookings
                     </Link>
                     <button 
                         onClick={() => setShowForm(!showForm)}

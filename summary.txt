@@ -499,3 +499,68 @@ Completed Task #2 (Admin Flight Search, Sort, Filter & Paging) and Task #3
      admin password with `@Value("${app.admin.email}")` and
      `@Value("${app.admin.password:}")`.
 ================================================================================
+
+
+================================================================================
+12. UPDATE LOG - ADMIN BOOKINGS MANAGEMENT, PNR LOOKUP & EXCEPTION HANDLING (2026-11-11)
+================================================================================
+- Added `AdminBookingController.java` (`GET /api/admin/bookings`):
+  - Protected automatically under `/api/admin/**` (`hasRole("ADMIN")`).
+  - Accepts `query`, `status` (`ALL`, `CONFIRMED`, `CANCELLED`), `sortBy`
+    (`created_desc`, `created_asc`, `price_desc`, `price_asc`, `pnr_asc`),
+    `page`, and `size`.
+- Added `AdminBookingResponse.java` & JPQL `BookingRepository.searchAdminBookings`:
+  - Joins `Booking`, `Flight`, and `User` into a single paginated SQL query
+    searching across PNR, Booking ID, passenger email/name, flight number,
+    airline, and airport codes with zero N+1 queries.
+- Updated `BookingService.java` & `BookingServiceImpl.java`:
+  - Added `getAdminBookings(...)`.
+  - Fixed the N+1 query in `getUserBookings` using `flightRepository.findAllById`.
+  - Hardened `getBookingByPnr(String pnr, Long userId, boolean isAdmin)` with
+    primitive `boolean`, blank PNR check, and `ResourceNotFoundException`.
+- Added `ResourceNotFoundException.java` & `GlobalExceptionHandler.java`
+  (`@RestControllerAdvice`) mapping `ResourceNotFoundException` -> `404`,
+  `IllegalArgumentException` -> `400`, and `IllegalStateException` -> `409`.
+- Frontend:
+  - Created `frontend/src/pages/AdminBookingsPage.jsx` at `/admin/bookings`
+    (`<AdminRoute>`) featuring:
+    1) Direct Quick PNR Verification widget calling `GET /api/bookings/pnr/{pnr}`
+    2) Always-visible paginated, searchable, and sortable All Bookings table
+    3) Click-to-view Booking Full Details modal (passenger + flight + payment).
+  - Updated `App.jsx` (added `/admin/bookings` route + admin-only `Bookings`
+    Navbar link) and `AdminDashboard.jsx` (added `Manage Bookings` button).
+================================================================================
+
+
+================================================================================
+13. UPDATE LOG - CENTRALIZED MULTI-ORIGIN CORS & DATASEEDER GUARD (2026-11-12)
+================================================================================
+- Removed `@CrossOrigin(origins = "*")` from all 7 controllers
+  (`AdminAirportController`, `AdminBookingController`, `AdminFlightController`,
+  `AirportController`, `AuthController`, `BookingController`, `FlightController`).
+- Updated `SecurityConfig.java` (`corsConfigurationSource`) to inject
+  `app.cors.allowed-origins` (`${CORS_ALLOWED_ORIGINS:http://localhost:5173}`),
+  splitting and trimming comma-separated origins so single or multiple frontend
+  origins can be configured cleanly via `.env.local` or OS env vars.
+- Updated `application.properties`, `demo/.env.local`, and `demo/.env.example`
+  with `CORS_ALLOWED_ORIGINS`.
+- Updated `DataSeeder.java` to check both `adminEmail` and `adminPassword`
+  for blank/null before querying `userRepository.findByEmail(...)`.
+================================================================================
+
+
+================================================================================
+14. UPDATE LOG - JAKARTA BEAN VALIDATION (@Valid) ON REQUEST DTOS (2026-11-12)
+================================================================================
+- Verified `spring-boot-starter-validation` in `demo/pom.xml`.
+- Added Jakarta validation constraints (`@NotBlank`, `@NotNull`, `@Email`,
+  `@Size`, `@Positive`, `@DecimalMin`, `@Pattern`) to all 5 request DTOs:
+  `RegisterRequest`, `LoginRequest`, `BookingRequest`, `FlightCreateRequest`,
+  and `AirportCreateRequest`.
+- Added `@Valid` to `@RequestBody` parameters in `AuthController`,
+  `BookingController`, `AdminFlightController`, and `AdminAirportController`.
+- Added dedicated `@ExceptionHandler(MethodArgumentNotValidException.class)` in
+  `GlobalExceptionHandler.java` returning `400 Bad Request` with `message` and
+  field-level `errors` map (since `MethodArgumentNotValidException` does not
+  extend `IllegalArgumentException`).
+================================================================================
