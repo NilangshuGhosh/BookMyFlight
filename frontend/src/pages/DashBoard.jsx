@@ -1,21 +1,28 @@
 import { useState, useEffect, useMemo } from 'react';
 import api from '../api/axios';
-import { Ticket, Plane, Calendar, CheckCircle, Search } from 'lucide-react';
+import { Ticket, Plane, Calendar, CheckCircle, Search, Ban, AlertTriangle, X } from 'lucide-react';
 
 const Dashboard = () => {
     const [bookings, setBookings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [message, setMessage] = useState('');
     
     // New State for Live Search
     const [searchTerm, setSearchTerm] = useState('');
+    const [cancelModal, setCancelModal] = useState({
+        open: false,
+        booking: null,
+        submitting: false,
+        modalError: ''
+    });
 
     useEffect(() => {
         const fetchBookings = async () => {
             try {
                 const response = await api.get('/bookings/my-bookings');
                 setBookings(response.data);
-            } catch (err) {
+            } catch {
                 setError('Failed to load your bookings. Please try again later.');
             } finally {
                 setLoading(false);
@@ -24,6 +31,29 @@ const Dashboard = () => {
 
         fetchBookings();
     }, []);
+
+    const handleConfirmCancel = async () => {
+        const { booking } = cancelModal;
+        if (!booking) return;
+
+        setMessage('');
+        setError('');
+        setCancelModal((prev) => ({ ...prev, submitting: true, modalError: '' }));
+
+        try {
+            const response = await api.post(`/bookings/${booking.id}/cancel`);
+            setBookings((prev) =>
+                prev.map((item) => (item.id === booking.id ? response.data : item))
+            );
+            setMessage(`Booking ${booking.pnr} cancelled and ${booking.seatsBooked ?? 1} seat(s) released.`);
+            setCancelModal({ open: false, booking: null, submitting: false, modalError: '' });
+        } catch (err) {
+            const msg = err.response?.data?.message
+                || (typeof err.response?.data === 'string' ? err.response.data : null)
+                || 'Failed to cancel booking.';
+            setCancelModal((prev) => ({ ...prev, submitting: false, modalError: msg }));
+        }
+    };
 
     // Smart Filtering Logic: Filters bookings instantly as you type
     const filteredBookings = useMemo(() => {
@@ -74,6 +104,12 @@ const Dashboard = () => {
                 )}
             </div>
 
+            {message && (
+                <div className="p-4 text-green-700 bg-green-50 rounded-lg border border-green-200 flex items-center">
+                    <CheckCircle className="w-5 h-5 mr-2 shrink-0" /> {message}
+                </div>
+            )}
+
             {error && (
                 <div className="p-4 text-red-600 bg-red-50 rounded-lg border border-red-100">
                     {error}
@@ -102,8 +138,12 @@ const Dashboard = () => {
                                 <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">PNR:</span>
                                 <span className="text-lg font-bold text-blue-600 tracking-widest">{booking.pnr}</span>
                             </div>
-                            <div className="flex items-center space-x-2 text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-200">
-                                <CheckCircle className="w-4 h-4" />
+                            <div className={`flex items-center space-x-2 px-3 py-1 rounded-full border ${
+                                booking.status === 'CONFIRMED'
+                                    ? 'text-green-600 bg-green-50 border-green-200'
+                                    : 'text-red-600 bg-red-50 border-red-200'
+                            }`}>
+                                {booking.status === 'CONFIRMED' ? <CheckCircle className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
                                 <span className="text-sm font-medium">{booking.status}</span>
                             </div>
                         </div>
@@ -139,11 +179,78 @@ const Dashboard = () => {
                                 <div className="text-2xl font-bold text-gray-900">
                                     ₹{booking.totalPrice}
                                 </div>
+                                {booking.status === 'CONFIRMED' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setCancelModal({ open: true, booking, submitting: false, modalError: '' })}
+                                        className="mt-3 inline-flex items-center px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors cursor-pointer"
+                                    >
+                                        <Ban className="w-3.5 h-3.5 mr-1" /> Cancel Ticket
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
                 ))}
             </div>
+
+            {cancelModal.open && cancelModal.booking && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-100 space-y-5">
+                        <div className="flex items-start justify-between">
+                            <div className="flex items-center space-x-2">
+                                <AlertTriangle className="w-6 h-6 text-red-600" />
+                                <h3 className="text-lg font-bold text-gray-900">Cancel Booking</h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setCancelModal({ open: false, booking: null, submitting: false, modalError: '' })}
+                                className="text-gray-400 hover:text-gray-600"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-3 bg-gray-50 rounded-lg border text-sm text-gray-700 space-y-1">
+                            <div className="font-bold text-blue-700">PNR: {cancelModal.booking.pnr}</div>
+                            <div>{cancelModal.booking.airline} • {cancelModal.booking.flightNumber}</div>
+                            <div>{cancelModal.booking.sourceAirport} → {cancelModal.booking.destinationAirport}</div>
+                            <div>
+                                {cancelModal.booking.seatsBooked ?? 1} {(cancelModal.booking.seatsBooked ?? 1) === 1 ? 'Seat' : 'Seats'} • ₹{cancelModal.booking.totalPrice}
+                            </div>
+                        </div>
+
+                        <p className="text-sm text-gray-600">
+                            Are you sure you want to cancel this booking? Your reserved seat(s) will be released immediately.
+                        </p>
+
+                        {cancelModal.modalError && (
+                            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                                {cancelModal.modalError}
+                            </div>
+                        )}
+
+                        <div className="flex justify-end space-x-3 pt-2">
+                            <button
+                                type="button"
+                                disabled={cancelModal.submitting}
+                                onClick={() => setCancelModal({ open: false, booking: null, submitting: false, modalError: '' })}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                            >
+                                Keep Ticket
+                            </button>
+                            <button
+                                type="button"
+                                disabled={cancelModal.submitting}
+                                onClick={handleConfirmCancel}
+                                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-60"
+                            >
+                                {cancelModal.submitting ? 'Cancelling...' : 'Confirm Cancellation'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

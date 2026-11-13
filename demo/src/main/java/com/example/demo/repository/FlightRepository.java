@@ -2,6 +2,7 @@ package com.example.demo.repository;
 
 import com.example.demo.entity.Flight;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -72,5 +73,36 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
             @Param("includeDeparted") boolean includeDeparted,
             @Param("now") LocalDateTime now,
             Pageable pageable
+    );
+
+    // Atomic conditional seat reservation (single-statement row lock in PostgreSQL)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Flight f
+            SET f.availableSeats = f.availableSeats - :qty
+            WHERE f.id = :flightId
+              AND f.availableSeats >= :qty
+              AND UPPER(f.status) <> 'CANCELLED'
+              AND f.departureTime > :now
+            """)
+    int reserveSeats(
+            @Param("flightId") Long flightId,
+            @Param("qty") int qty,
+            @Param("now") LocalDateTime now
+    );
+
+    // Atomic seat restoration on booking cancellation, capped at totalSeats
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Flight f
+            SET f.availableSeats = CASE
+                WHEN (f.availableSeats + :qty) > f.totalSeats THEN f.totalSeats
+                ELSE (f.availableSeats + :qty)
+            END
+            WHERE f.id = :flightId
+            """)
+    int releaseSeats(
+            @Param("flightId") Long flightId,
+            @Param("qty") int qty
     );
 }

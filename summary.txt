@@ -600,3 +600,31 @@ Completed Task #2 (Admin Flight Search, Sort, Filter & Paging) and Task #3
   - `DashBoard.jsx` & `AdminBookingsPage.jsx`: display `seatsBooked` on booking
     cards, PNR lookup, table rows, and details modal.
 ================================================================================
+
+
+================================================================================
+16. UPDATE LOG - ATOMIC CONCURRENCY-SAFE SEAT RESERVATION & CANCELLATION (2026-11-12)
+================================================================================
+- Chose Option 3 (Atomic Conditional SQL UPDATE) over Optimistic `@Version` and
+  `SELECT ... FOR UPDATE` to minimize PostgreSQL row-lock hold time and avoid
+  retry thrashing on HikariCP (`maximum-pool-size=10`) under high concurrency:
+  1) `FlightRepository.reserveSeats(flightId, qty, now)`:
+     Executes a single atomic `UPDATE Flight f SET f.availableSeats = f.availableSeats - :qty`
+     guarded by `f.availableSeats >= :qty AND UPPER(f.status) <> 'CANCELLED' AND f.departureTime > :now`.
+     PostgreSQL acquires an implicit row lock only for that single statement.
+  2) `FlightRepository.releaseSeats(flightId, qty)`:
+     Atomically restores `availableSeats` (capped at `totalSeats`) when a
+     booking is cancelled.
+  3) `BookingServiceImpl.createBooking`:
+     Calls `reserveSeats(...)` inside `@Transactional`; if `0` rows updated,
+     loads the flight to return the exact reason (`404` not found, or `409`
+     departed / cancelled / sold out / insufficient seats).
+  4) `BookingServiceImpl.cancelBooking` & `BookingController.cancelBooking`
+     (`POST /api/bookings/{bookingId}/cancel`):
+     Verifies ownership (or `ADMIN`), ensures status is not already
+     `CANCELLED` and flight has not departed, atomically calls `releaseSeats`,
+     and marks the booking `CANCELLED`.
+  5) `frontend/src/pages/DashBoard.jsx`:
+     Added a `Cancel Ticket` button + confirmation modal on `CONFIRMED`
+     bookings, updating UI state on cancellation.
+================================================================================

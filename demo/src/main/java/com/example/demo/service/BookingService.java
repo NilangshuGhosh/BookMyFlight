@@ -13,4 +13,5 @@ public interface BookingService {
     BookingResponse getBookingByPnr(String pnr, Long userId, boolean isAdmin);
     List<BookingResponse> getUserBookings(Long userId);
     Page<AdminBookingResponse> getAdminBookings(String query, String status, Pageable pageable);
+    BookingResponse cancelBooking(Long bookingId, Long userId, boolean isAdmin);
 }

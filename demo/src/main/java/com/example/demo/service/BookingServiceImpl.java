@@ -42,33 +42,31 @@ public class BookingServiceImpl implements BookingService {
             throw new IllegalArgumentException("Flight ID is required.");
         }
 
-        Flight flight = flightRepository.findById(request.flightId())
-                .orElseThrow(() -> new ResourceNotFoundException("Flight not found with ID: " + request.flightId()));
-
-        // Hard business constraint: Do not allow booking past/departed or cancelled flights
-        if (flight.getDepartureTime().isBefore(LocalDateTime.now())) {
-            throw new IllegalStateException("Cannot book a flight that has already departed.");
-        }
-        if ("CANCELLED".equalsIgnoreCase(flight.getStatus())) {
-            throw new IllegalStateException("Cannot book a cancelled flight.");
-        }
-
         int seatsToBook = request.seatsBooked() != null ? request.seatsBooked() : 1;
         if (seatsToBook < 1 || seatsToBook > 6) {
             throw new IllegalArgumentException("You can book between 1 and 6 seats per PNR.");
         }
 
-        int availableSeats = flight.getAvailableSeats() != null ? flight.getAvailableSeats() : 0;
-        if (availableSeats < seatsToBook) {
+        LocalDateTime now = LocalDateTime.now();
+        int updatedRows = flightRepository.reserveSeats(request.flightId(), seatsToBook, now);
+
+        Flight flight = flightRepository.findById(request.flightId())
+                .orElseThrow(() -> new ResourceNotFoundException("Flight not found with ID: " + request.flightId()));
+
+        if (updatedRows == 0) {
+            if (!flight.getDepartureTime().isAfter(now)) {
+                throw new IllegalStateException("Cannot book a flight that has already departed.");
+            }
+            if ("CANCELLED".equalsIgnoreCase(flight.getStatus())) {
+                throw new IllegalStateException("Cannot book a cancelled flight.");
+            }
+            int availableSeats = flight.getAvailableSeats() != null ? flight.getAvailableSeats() : 0;
             throw new IllegalStateException(
                     availableSeats == 0
                             ? "This flight is sold out."
                             : "Only " + availableSeats + " seat(s) left on this flight."
             );
         }
-
-        flight.setAvailableSeats(availableSeats - seatsToBook);
-        flightRepository.save(flight);
 
         String uniquePnr = generatePnr();
         BigDecimal totalPrice = flight.getBasePrice().multiply(BigDecimal.valueOf(seatsToBook));
@@ -137,6 +135,39 @@ public class BookingServiceImpl implements BookingService {
         }
         String normalizedStatus = (status != null && !status.isBlank()) ? status.trim().toUpperCase() : "ALL";
         return bookingRepository.searchAdminBookings(sanitizedQuery, queryId, normalizedStatus, pageable);
+    }
+
+    @Override
+    @Transactional
+    public BookingResponse cancelBooking(Long bookingId, Long userId, boolean isAdmin) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found with ID: " + bookingId));
+
+        if (!isAdmin && (userId == null || !Objects.equals(booking.getUserId(), userId))) {
+            throw new ResourceNotFoundException("Booking not found with ID: " + bookingId);
+        }
+
+        if ("CANCELLED".equalsIgnoreCase(booking.getStatus())) {
+            throw new IllegalStateException("Booking is already cancelled.");
+        }
+
+        Flight flight = booking.getFlightId() != null
+                ? flightRepository.findById(booking.getFlightId()).orElse(null)
+                : null;
+
+        if (flight != null && !flight.getDepartureTime().isAfter(LocalDateTime.now())) {
+            throw new IllegalStateException("Cannot cancel a booking for a flight that has already departed.");
+        }
+
+        int seatsToRelease = booking.getSeatsBooked() != null ? booking.getSeatsBooked() : 1;
+        if (booking.getFlightId() != null) {
+            flightRepository.releaseSeats(booking.getFlightId(), seatsToRelease);
+        }
+
+        booking.setStatus("CANCELLED");
+        Booking savedBooking = bookingRepository.save(booking);
+
+        return mapToResponse(savedBooking, flight);
     }
 
     private String generatePnr() {

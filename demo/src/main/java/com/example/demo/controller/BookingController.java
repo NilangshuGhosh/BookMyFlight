@@ -66,6 +66,18 @@ public class BookingController {
        
         return ResponseEntity.ok(response);
     }
+
+    /**
+     * Cancel an upcoming confirmed booking and atomically restore its seats.
+     */
+    @PostMapping("/{bookingId}/cancel")
+    public ResponseEntity<BookingResponse> cancelBooking(@PathVariable Long bookingId, Principal principal) {
+        User user = userRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new IllegalArgumentException("Authenticated user not found"));
+        boolean isAdmin = "ADMIN".equalsIgnoreCase(user.getRole());
+        BookingResponse response = bookingService.cancelBooking(bookingId, user.getId(), isAdmin);
+        return ResponseEntity.ok(response);
+    }
 }
 
 // package com.example.demo.controller;
