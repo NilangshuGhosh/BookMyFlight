@@ -5,6 +5,7 @@ import com.example.demo.dto.BookingRequest;
 import com.example.demo.dto.BookingResponse;
 import com.example.demo.entity.Booking;
 import com.example.demo.entity.Flight;
+import com.example.demo.entity.IdempotencyRecord;
 import com.example.demo.exception.ResourceNotFoundException;
 import com.example.demo.repository.BookingRepository;
 import com.example.demo.repository.FlightRepository;
@@ -27,17 +28,56 @@ public class BookingServiceImpl implements BookingService {
 
     private final BookingRepository bookingRepository;
     private final FlightRepository flightRepository;
+    private final IdempotencyService idempotencyService;
     private static final String PNR_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    public BookingServiceImpl(BookingRepository bookingRepository, FlightRepository flightRepository) {
+    public BookingServiceImpl(BookingRepository bookingRepository,
+                              FlightRepository flightRepository,
+                              IdempotencyService idempotencyService) {
         this.bookingRepository = bookingRepository;
         this.flightRepository = flightRepository;
+        this.idempotencyService = idempotencyService;
     }
 
     @Override
     @Transactional
     public BookingResponse createBooking(BookingRequest request, Long userId) {
+        return createBooking(request, userId, null);
+    }
+
+    @Override
+    @Transactional
+    public BookingResponse createBooking(BookingRequest request, Long userId, String idempotencyKey) {
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            String trimmedKey = idempotencyKey.trim();
+            if (trimmedKey.length() > 128) {
+                throw new IllegalArgumentException("Idempotency-Key exceeds maximum allowed length of 128 characters.");
+            }
+
+            String requestHash = idempotencyService.computeHash(request);
+            String endpoint = "POST /api/bookings/create";
+
+            IdempotencyRecord record = idempotencyService.startOrGet(userId, trimmedKey, requestHash, endpoint);
+
+            if ("COMPLETED".equalsIgnoreCase(record.getStatus())) {
+                return idempotencyService.deserialize(record.getResponseBody(), BookingResponse.class);
+            }
+
+            try {
+                BookingResponse response = executeBookingInternal(request, userId);
+                idempotencyService.markCompleted(record.getId(), 201, response, response.id());
+                return response;
+            } catch (Exception ex) {
+                idempotencyService.releaseOnFailure(record.getId());
+                throw ex;
+            }
+        }
+
+        return executeBookingInternal(request, userId);
+    }
+
+    private BookingResponse executeBookingInternal(BookingRequest request, Long userId) {
         if (request == null || request.flightId() == null) {
             throw new IllegalArgumentException("Flight ID is required.");
         }

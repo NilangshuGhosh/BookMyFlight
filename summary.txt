@@ -628,3 +628,175 @@ Completed Task #2 (Admin Flight Search, Sort, Filter & Paging) and Task #3
      Added a `Cancel Ticket` button + confirmation modal on `CONFIRMED`
      bookings, updating UI state on cancellation.
 ================================================================================
+
+
+================================================================================
+17. UPDATE LOG - IDEMPOTENCY KEY PATTERN FOR DUPLICATE BOOKING PREVENTION (2026-11-13)
+================================================================================
+- Context & Motivation:
+  In distributed and financial transaction systems, network retries, browser
+  crashes, or double-clicks can submit duplicate requests. Without idempotency,
+  duplicate bookings are created and seat inventory is decremented multiple times.
+
+- Architectural Decisions & Tradeoffs:
+  1) Dedicated `idempotency_records` table vs. column in `bookings`:
+     - Rejected column in `bookings`: A booking row does not exist while a request
+       is in-flight (leaving a race condition window open for concurrent clicks),
+       cannot record failed attempts, and cannot be purged after 24 hours without
+       deleting actual flight tickets.
+     - Implemented dedicated table: Captures `IN_PROGRESS` state to block concurrent
+       race conditions, caches the exact HTTP status code and response JSON, and
+       allows automated TTL-based record purging without touching domain data.
+  2) Flyway Migration `V7__idempotency_records.sql`:
+     - Creates `idempotency_records` with:
+       - `user_id` (BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE)
+       - `idempotency_key` (VARCHAR(128) NOT NULL)
+       - `request_hash` (VARCHAR(64) NOT NULL, SHA-256 digest)
+       - `endpoint` (VARCHAR(100) NOT NULL, e.g. "POST /api/bookings/create")
+       - `status` (VARCHAR(20) NOT NULL, 'IN_PROGRESS' | 'COMPLETED')
+       - `response_status_code` (INT)
+       - `response_body` (TEXT)
+       - `booking_id` (BIGINT REFERENCES bookings(id) ON DELETE SET NULL)
+       - `created_at` (TIMESTAMP DEFAULT NOW())
+       - `expires_at` (TIMESTAMP NOT NULL)
+       - `CONSTRAINT uq_user_idempotency_key UNIQUE (user_id, idempotency_key)`
+     - B-Tree indexes on `(user_id, idempotency_key)` and `expires_at`.
+  3) Scoping & Security:
+     - Scoped by `(user_id, idempotency_key)`: User A cannot collide with or probe
+       User B's idempotency key.
+     - Mandatory header enforcement: `Idempotency-Key` is strictly required on
+       `POST /api/bookings/create`. Missing or blank headers return HTTP 400 Bad Request
+       ("Header 'Idempotency-Key' is required for booking creation to prevent duplicate reservations.").
+       Keys exceeding 128 characters are rejected to prevent buffer abuse.
+  4) Payload Hash Verification (Stripe Pattern):
+     - Computes SHA-256 hash of the incoming request payload (`BookingRequest`).
+     - If a key is reused with different flight IDs or seat quantities, the server
+       rejects it with HTTP 400 Bad Request ("Idempotency key was previously used
+       with different request parameters").
+  5) Endpoint Namespacing:
+     - The `endpoint` column stores `"POST /api/bookings/create"`. This guarantees
+       that idempotency keys are namespaced and cannot collide or be replayed across
+       other future endpoints (e.g., payments or cancellations).
+  6) Concurrency & Atomic Locking (`IdempotencyServiceImpl`):
+     - Uses `Propagation.REQUIRES_NEW` to atomically insert an `IN_PROGRESS` record
+       before booking execution.
+     - PostgreSQL's unique constraint `uq_user_idempotency_key` guarantees that if two
+       requests arrive at the exact same millisecond, one inserts and the other catches
+       `DataIntegrityViolationException`, returning HTTP 409 Conflict ("A request with
+       this Idempotency-Key is currently in progress. Please wait.").
+     - On successful booking: updates record to `COMPLETED`, caches serialized
+       `BookingResponse` JSON, and links `booking_id`.
+     - On business error (e.g., sold out): calls `releaseOnFailure` to delete the
+       `IN_PROGRESS` record so the user can modify parameters and retry.
+     - On subsequent retries with the same key: immediately returns the cached JSON
+       without touching the `flights` table or decrementing seats again.
+  7) Off-Peak Scheduled TTL Cleanup:
+     - Enabled Spring scheduling with `@EnableScheduling` on `DemoApplication.java`.
+     - `app.idempotency.ttl-hours` (default 24) and `app.idempotency.cleanup-cron`
+       (default "0 0 3 * * *", 3:00 AM server time) externalized in `application.properties`
+       and `.env.example`.
+     - Scheduled cron purges expired records (`expires_at < NOW()`) during the off-peak
+       low-traffic window.
+  8) CORS & Exception Handling:
+     - Added `"Idempotency-Key"` to `allowedHeaders` and `exposedHeaders` in
+       `SecurityConfig.java` to prevent browser preflight CORS blocks.
+     - Added handler for `MissingRequestHeaderException` in `GlobalExceptionHandler.java`.
+  9) Frontend Protection:
+     - `frontend/src/pages/HomePage.jsx`:
+       - Added synchronous `activeBookingRef` mutex to block rapid double-taps before
+         React updates button disabled state.
+       - Generates `crypto.randomUUID()` and sends it in the `Idempotency-Key` header
+         for each booking submission.
+================================================================================
+
+- Refinement: Transaction Propagation & Network Drop Resilience (2026-11-14):
+  1) `Propagation.REQUIRES_NEW` vs `REQUIRED` Tuning:
+     - `startOrGet` retains `REQUIRES_NEW`: atomically inserts and commits `IN_PROGRESS`
+       in an isolated 1ms sub-transaction so concurrent requests across threads or nodes
+       immediately see the lock before flight logic begins.
+     - `markCompleted` changed to `Propagation.REQUIRED`: executes in the SAME outer
+       transaction as `createBooking`. This guarantees that the `Booking` and the
+       `IdempotencyRecord (COMPLETED)` commit atomically together in a single DB commit,
+       preventing dual-connection HikariCP exhaustion and eliminating foreign-key lock waits.
+     - `releaseOnFailure` retains `REQUIRES_NEW`: deletes the `IN_PROGRESS` record in its
+       own transaction even if the outer booking transaction is rolling back due to business error.
+     - Stale in-progress auto-recovery: Added a 2-minute timeout check. If a server process
+       dies mid-flight, subsequent requests automatically purge the orphan `IN_PROGRESS` record
+       instead of locking the user out for 24 hours.
+  2) Frontend Intent-Scoped Key Management across Network Drops (`HomePage.jsx`):
+     - Added `activeBookingIntentKeys` (`useRef(new Map())`) keyed by `${flightId}_${seatsBooked}`.
+     - If the client's network fumbles or times out while the server successfully committed,
+       the user's subsequent "Book Now" click reuses the EXACT SAME idempotency key.
+     - The server returns the cached confirmed booking without deducting duplicate seats.
+     - The intent key is only deleted on successful confirmation or terminal rejection (e.g. 400).
+================================================================================
+
+- Hardening & Audit Fixes (2026-11-14):
+  1) Jackson Databind & JavaTimeModule in `pom.xml`:
+     - Added explicit `jackson-databind` and `jackson-datatype-jsr310` dependencies to
+       resolve IDE indexing red lines and ensure seamless ISO-8601 `LocalDateTime` serialization.
+  2) Frontend Session Persistence via `sessionStorage` (`HomePage.jsx`):
+     - Replaced transient in-memory `useRef` with `sessionStorage` (`bmf_idem_${flightId}_${seats}`).
+     - Keys now survive page reloads (F5), browser crashes, and route unmounts.
+     - On 200/201 success or terminal 400 rejection: storage key is purged.
+     - On network drop or 409 in-progress: storage key is retained so subsequent attempts
+       guarantee exact idempotency deduplication.
+  3) Elimination of Risky 2-Minute On-the-Fly Deletion:
+     - Removed the unsafe 2-minute deletion from `startOrGet` to prevent split-brain double
+       bookings if a slow/stalled thread finishes after 2 minutes.
+     - `IN_PROGRESS` requests strictly return HTTP 409 Conflict until completed or cleared by
+       `releaseOnFailure` on exception.
+  4) PostgreSQL Aborted Transaction Guard in `startOrGet`:
+     - On `DataIntegrityViolationException` (unique constraint `uq_user_idempotency_key`),
+       the code immediately aborts with HTTP 409 Conflict instead of attempting a follow-up
+       query inside an aborted transaction block.
+  5) `markCompleted` Fail-Fast Persistence:
+     - Replaced silent error swallowing with fast failure: throws `IllegalStateException`
+       if record is missing or JSON serialization fails, ensuring atomic rollback integrity.
+  6) Strict 24-Hour TTL Expiration Enforcement:
+     - If a request is received with an expired idempotency key (`expires_at < NOW()`),
+       the server explicitly rejects it with HTTP 400 Bad Request instead of resurrecting it.
+================================================================================
+  7) Explicit Jackson Configuration Bean (`JacksonConfig.java`):
+     - Added `@Configuration` class declaring a `@Primary @Bean ObjectMapper` with
+       `JavaTimeModule` registered and `WRITE_DATES_AS_TIMESTAMPS` disabled.
+     - Ensures Spring IoC container explicitly resolves `ObjectMapper` injection into
+       `IdempotencyServiceImpl` and outputs ISO-8601 timestamps for `LocalDateTime`.
+================================================================================
+
+
+================================================================================
+18. UPDATE LOG - PERFORMANCE OPTIMIZATION & PARTIAL INDEXING (2026-11-14)
+================================================================================
+- Context & Motivation:
+  Under high traffic and growing table sizes, flight route searches, chronological
+  sorting (departed/upcoming flights), and user booking lookups execute sequential
+  scans (O(N)) across PostgreSQL heap pages if unindexed. Foreign keys in PostgreSQL
+  are also not automatically indexed.
+
+- Implemented in Flyway Migration `V8__performance_indexes.sql`:
+  1) `idx_flights_route_departure`:
+     - Schema: `CREATE INDEX idx_flights_route_departure ON flights (source_airport, destination_airport, departure_time) WHERE UPPER(status) <> 'CANCELLED'`
+     - Tradeoff & Benefit: A partial composite B-Tree index specifically tailored
+       to public flight discovery (`findBySourceAirportCodeAndDestinationAirportCodeAndDepartureTimeAfter`).
+       Filtering `WHERE UPPER(status) <> 'CANCELLED'` excludes cancelled flights from the
+       index tree, keeping index memory footprint minimal and eliminating full table scans.
+  2) `idx_flights_departure_time`:
+     - Schema: `CREATE INDEX idx_flights_departure_time ON flights (departure_time DESC)`
+     - Benefit: Accelerates chronological queries (`GET /api/flights/departed` and
+       `GET /api/flights/upcoming`), allowing PostgreSQL to perform an ordered Index Scan
+       instead of costly in-memory Top-N sorting (`SortMethod: quicksort`).
+  3) `idx_bookings_user_created`:
+     - Schema: `CREATE INDEX idx_bookings_user_created ON bookings (user_id, created_at DESC)`
+     - Benefit: Makes user dashboard queries (`GET /api/bookings/my-bookings` via
+       `bookingRepository.findByUserId(userId)`) sub-millisecond, scanning only that user's
+       index slice in reverse chronological order.
+  4) `idx_bookings_flight_id`:
+     - Schema: `CREATE INDEX idx_bookings_flight_id ON bookings (flight_id)`
+     - Benefit: Indexes foreign key references from `bookings` to `flights`. Optimizes
+       relational JOINs in admin queries and seat aggregation lookups.
+  5) `idx_booking_passengers_booking_id`:
+     - Schema: `CREATE INDEX idx_booking_passengers_booking_id ON booking_passengers (booking_id)`
+     - Benefit: Indexes foreign key references from `booking_passengers` to `bookings`.
+       Accelerates passenger lookups and ON DELETE CASCADE operations.
+================================================================================

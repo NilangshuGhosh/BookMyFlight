@@ -31,14 +31,21 @@ public class BookingController {
      */
     @PostMapping("/create")
     public ResponseEntity<BookingResponse> createBooking(
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody BookingRequest request,
             Principal principal) {
-        
+
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Header 'Idempotency-Key' is required for booking creation to prevent duplicate reservations."
+            );
+        }
+
         // Extract the user securely from the JWT token
         User user = userRepository.findByEmail(principal.getName())
                 .orElseThrow(() -> new IllegalArgumentException("Authenticated user not found"));
 
-        BookingResponse response = bookingService.createBooking(request, user.getId());
+        BookingResponse response = bookingService.createBooking(request, user.getId(), idempotencyKey.trim());
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 

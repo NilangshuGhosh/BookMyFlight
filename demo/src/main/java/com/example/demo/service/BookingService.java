@@ -10,6 +10,7 @@ import java.util.List;
 
 public interface BookingService {
     BookingResponse createBooking(BookingRequest request, Long userId);
+    BookingResponse createBooking(BookingRequest request, Long userId, String idempotencyKey);
     BookingResponse getBookingByPnr(String pnr, Long userId, boolean isAdmin);
     List<BookingResponse> getUserBookings(Long userId);
     Page<AdminBookingResponse> getAdminBookings(String query, String status, Pageable pageable);

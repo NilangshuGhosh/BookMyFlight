@@ -1,4 +1,4 @@
-import { useState, useContext, useEffect } from 'react';
+import { useState, useContext, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import api from '../api/axios';
@@ -12,6 +12,28 @@ const getLocalTodayString = () => {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+};
+
+// Persists in-flight idempotency keys in sessionStorage so keys survive page reloads and tab navigations
+const getIdempotencyKeyForIntent = (intentKey) => {
+    try {
+        const storageKey = `bmf_idem_${intentKey}`;
+        const stored = sessionStorage.getItem(storageKey);
+        if (stored) return stored;
+        const newKey = crypto.randomUUID();
+        sessionStorage.setItem(storageKey, newKey);
+        return newKey;
+    } catch {
+        return crypto.randomUUID();
+    }
+};
+
+const clearIdempotencyKeyForIntent = (intentKey) => {
+    try {
+        sessionStorage.removeItem(`bmf_idem_${intentKey}`);
+    } catch {
+        // ignore storage errors
+    }
 };
 
 const HomePage = () => {
@@ -50,6 +72,7 @@ const HomePage = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [bookingState, setBookingState] = useState({ id: null, loading: false });
+    const activeBookingRef = useRef(false);
     const [searchPage, setSearchPage] = useState(0);
     const [searchTotalPages, setSearchTotalPages] = useState(1);
     const [searchTotalElements, setSearchTotalElements] = useState(0);
@@ -168,13 +191,51 @@ const HomePage = () => {
             return;
         }
 
+        // Prevent immediate synchronous double-taps on the same render cycle
+        if (activeBookingRef.current || bookingState.loading) {
+            return;
+        }
+
+        activeBookingRef.current = true;
         setBookingState({ id: flightId, loading: true });
+
+        // Scoped intent key (flight + seat count). Survives browser reload/unmount via sessionStorage.
+        const intentKey = `${flightId}_${seatsBooked}`;
+        const idempotencyKey = getIdempotencyKeyForIntent(intentKey);
+
         try {
-            await api.post('/bookings/create', { flightId, seatsBooked });
+            await api.post(
+                '/bookings/create',
+                { flightId, seatsBooked },
+                {
+                    headers: {
+                        'Idempotency-Key': idempotencyKey,
+                    },
+                }
+            );
+
+            // Successfully confirmed: clear the intent key so any future booking is fresh
+            clearIdempotencyKeyForIntent(intentKey);
             navigate('/dashboard');
         } catch (err) {
-            alert(err.response?.data?.message || 'Failed to book flight.');
+            const status = err.response?.status;
+            const message = err.response?.data?.message || 'Failed to book flight.';
+
+            // If network dropped (no response) or server is still processing (409 IN_PROGRESS):
+            // KEEP the key in sessionStorage so subsequent clicks or page reloads retrieve the created booking safely!
+            if (!err.response || status === 409) {
+                alert(status === 409
+                    ? 'A booking is currently being processed. Please wait a moment and try again.'
+                    : 'Network connection issue. Please click Book Now again to check your reservation status.');
+            } else {
+                // Definitive terminal rejection (e.g. 400 Bad Request or flight sold out): clear key
+                clearIdempotencyKeyForIntent(intentKey);
+                alert(message);
+            }
+
             setBookingState({ id: null, loading: false });
+        } finally {
+            activeBookingRef.current = false;
         }
     };
 
