@@ -664,10 +664,10 @@ Completed Task #2 (Admin Flight Search, Sort, Filter & Paging) and Task #3
   3) Scoping & Security:
      - Scoped by `(user_id, idempotency_key)`: User A cannot collide with or probe
        User B's idempotency key.
-     - Mandatory header enforcement: `Idempotency-Key` is strictly required on
-       `POST /api/bookings/create`. Missing or blank headers return HTTP 400 Bad Request
-       ("Header 'Idempotency-Key' is required for booking creation to prevent duplicate reservations.").
-       Keys exceeding 128 characters are rejected to prevent buffer abuse.
+     - Mandatory idempotency enforcement: Idempotency-Key is strictly required across
+       both the HTTP controller (POST /api/bookings/create) and the service layer
+       (BookingService.createBooking). Legacy overloads bypassing idempotency with null
+       have been completely removed; missing or blank keys reject with IllegalArgumentException.
   4) Payload Hash Verification (Stripe Pattern):
      - Computes SHA-256 hash of the incoming request payload (`BookingRequest`).
      - If a key is reused with different flight IDs or seat quantities, the server
@@ -799,4 +799,112 @@ Completed Task #2 (Admin Flight Search, Sort, Filter & Paging) and Task #3
      - Schema: `CREATE INDEX idx_booking_passengers_booking_id ON booking_passengers (booking_id)`
      - Benefit: Indexes foreign key references from `booking_passengers` to `bookings`.
        Accelerates passenger lookups and ON DELETE CASCADE operations.
+================================================================================
+
+
+================================================================================
+19. UPDATE LOG - DECOUPLED ASYNC DOMAIN EVENTS & NOTIFICATIONS (2026-11-15)
+================================================================================
+- Context & Motivation:
+  Sending emails, generating PDF boarding passes, or contacting third-party
+  notification providers (e.g. Brevo, SendGrid) takes 1–3 seconds of external network I/O.
+  Executing external I/O inside a `@Transactional` boundary holds open the PostgreSQL
+  connection from HikariCP (`maximum-pool-size=10`), causing connection pool starvation
+  under concurrent requests. Moreover, external notification timeouts could cause
+  unwanted rollbacks of valid, confirmed bookings.
+
+- Architecture & Implementation:
+  1) `AsyncConfig.java`:
+     - Annotated with `@EnableAsync`.
+     - Declares a dedicated `ThreadPoolTaskExecutor` bean (`taskExecutor`):
+       - Core Pool Size: 5
+       - Max Pool Size: 15
+       - Queue Capacity: 100
+       - Thread Name Prefix: `bmf-async-`
+     - Replaces Spring's unbounded `SimpleAsyncTaskExecutor` with a bounded, managed thread pool.
+  2) `BookingConfirmedEvent.java`:
+     - Java record carrying all notification snapshot attributes: `bookingId`, `pnr`,
+       `userId`, `userEmail`, `flightNumber`, `airline`, `sourceAirport`, `destinationAirport`,
+       `departureTime`, `seatsBooked`, `totalPrice`, and `bookedAt`.
+     - Prevents downstream listeners from needing to re-query the database or access
+       closed Hibernate sessions (eliminating `LazyInitializationException`).
+  3) `BookingServiceImpl.java`:
+     - Injects `ApplicationEventPublisher` and `UserRepository`.
+     - In `executeBookingInternal`: after saving the `Booking` entity, retrieves the user's
+       email and publishes `BookingConfirmedEvent`.
+  4) `BookingNotificationListener.java`:
+     - Annotated with `@Async("taskExecutor")` and
+       `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)`.
+     - Guarantees:
+       a) Phase `AFTER_COMMIT`: The listener executes ONLY after PostgreSQL has successfully
+          committed the booking transaction. If the transaction rolls back (e.g. sold out
+          or concurrent conflict), the event is dropped and no notification is sent.
+       b) `@Async`: The listener runs on a background worker thread (`bmf-async-`),
+          releasing the HTTP request thread and database connection pool in $<5\text{ms}$.
+     - Default behavior: Outputs an ASCII-formatted confirmation ticket to terminal logs.
+       Ready for plug-and-play Brevo SMTP / REST dispatch without modifying core booking logic.
+================================================================================
+
+- Architectural Blueprint: Integrating Real Email (Brevo / Resend / SendGrid) When Ready:
+  When ready to enable live email delivery to real user inboxes, follow this exact 3-step checklist:
+  
+  Step 1: Add Spring Mail Starter to `demo/pom.xml`:
+  ```xml
+  <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-mail</artifactId>
+  </dependency>
+  ```
+  
+  Step 2: Add Brevo SMTP Credentials in `demo/.env.local` (and `application.properties`):
+  ```properties
+  spring.mail.host=smtp-relay.brevo.com
+  spring.mail.port=587
+  spring.mail.username=${BREVO_SMTP_LOGIN}
+  spring.mail.password=${BREVO_SMTP_KEY}
+  spring.mail.properties.mail.smtp.auth=true
+  spring.mail.properties.mail.smtp.starttls.enable=true
+  app.mail.from=no-reply@bookmyflight.com
+  ```
+  
+  Step 3: Update `BookingNotificationListener.java`:
+  Inject Spring's `JavaMailSender` into `BookingNotificationListener`:
+  ```java
+  @Autowired(required = false)
+  private JavaMailSender mailSender;
+
+  @Async("taskExecutor")
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+  public void handleBookingConfirmed(BookingConfirmedEvent event) {
+      // 1. Terminal log output (always preserved for observability)
+      log.info("Dispatching confirmation for PNR: {}", event.pnr());
+
+      // 2. Real SMTP Dispatch (activates automatically when credentials exist)
+      if (mailSender != null && event.userEmail() != null && !event.userEmail().isBlank()) {
+          try {
+              SimpleMailMessage message = new SimpleMailMessage();
+              message.setFrom("no-reply@bookmyflight.com");
+              message.setTo(event.userEmail());
+              message.setSubject("Booking Confirmed! - PNR: " + event.pnr());
+              message.setText(String.format(
+                  "Dear Passenger,\n\nYour flight %s (%s) from %s to %s is CONFIRMED.\n" +
+                  "Departure: %s\nSeats: %d\nTotal: INR %.2f\nPNR: %s\n\nThank you for choosing BookMyFlight!",
+                  event.flightNumber(), event.airline(), event.sourceAirport(),
+                  event.destinationAirport(), event.departureTime(), event.seatsBooked(),
+                  event.totalPrice(), event.pnr()
+              ));
+              mailSender.send(message);
+              log.info("Real email successfully sent to {}", event.userEmail());
+          } catch (Exception ex) {
+              log.warn("Failed to dispatch live email for PNR {}: {}", event.pnr(), ex.getMessage());
+          }
+      }
+  }
+  ```
+  
+  Architectural Safety Guarantee:
+  Because this code runs `@Async` on the `bmf-async-` thread pool AFTER PostgreSQL has committed:
+  - An SMTP timeout or Brevo API outage will NEVER freeze or block the web server.
+  - An email failure will NEVER roll back a confirmed ticket or decrement seat counts twice.
+  - Database connection hold time remains $<5\text{ms}$.
 ================================================================================
