@@ -52,6 +52,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/flights/search", "/api/flights/upcoming", "/api/flights/departed").permitAll()
                 // Admin only endpoints
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .requestMatchers("/api/chat/test").permitAll()
                 // All other endpoints require authentication
                 .anyRequest().authenticated()
             )
