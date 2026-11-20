@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import com.example.demo.dto.BookingResponse;
 import com.example.demo.dto.FlightResponse;
 import com.example.demo.dto.FlightSearchRequest;
+import com.example.demo.entity.Airport;
 import com.example.demo.entity.Flight;
 import com.example.demo.entity.User;
 import com.example.demo.repository.BookingRepository;
@@ -26,10 +27,12 @@ public class FlightAiTools {
     private final FlightService flightService;
     private final BookingService bookingService;
     private final UserRepository userRepository;
-    FlightAiTools(FlightService flightService,BookingService bookingService,UserRepository userRepository){
+    private final AirportService airportService;
+    FlightAiTools(FlightService flightService,BookingService bookingService,UserRepository userRepository,AirportService airportService){
         this.flightService=flightService;
         this.bookingService=bookingService;
         this.userRepository=userRepository;
+        this.airportService=airportService;
     }
     private User getUser(){
         Authentication authentication=SecurityContextHolder.getContext().getAuthentication();
@@ -39,7 +42,7 @@ public class FlightAiTools {
         
         return userRepository.findByEmail(authentication.getName()).orElse(null);
     }
-    @Tool (description="Search Upcoming available flights by source and destination code and given date(default currentDate and Next)")
+    @Tool (description="Search Upcoming available flights by source and destination airport code and given date(default currentDate and Next)")
     List<FlightResponse>searchUpcomingFlightsByCode(
         @ToolParam (description="3-letter IATA Source Airport Code, e.g., CCU for Kolkata, DEL for Delhi, BLR for Bangalore, BOM for Mumbai")String srcCode,
         @ToolParam (description="3-letter IATA Destination Airport Code")String dstCode,
@@ -61,6 +64,12 @@ public class FlightAiTools {
         }
         boolean isAdmin="ADMIN".equalsIgnoreCase(user.getRole());
         return bookingService.getBookingByPnr(pnr, user.getId(), isAdmin);
+    }
+    @Tool(description = "Given the city Name(Like Delhi,Kolkata) it returns you the 3-letter IATA code of Airport(Like DEL,CCU)")
+    List<String>searchAirportsViaCityName(
+        @ToolParam (description="Give here the city name whose airport codes are to be searched",required = true) String cityName
+    ){
+        return airportService.getAirportsForAdmin(cityName,PageRequest.of(0, 5)).getContent().stream().map(t->t.getAirportCode()).toList();
     }
 
 }
